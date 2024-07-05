@@ -56,7 +56,7 @@ contract ComputationMarket {
     uint256 public requestCount; // Total number of requests created
     uint256 public constant PROVIDER_STAKE_PERCENTAGE = 10; // Percentage of payment provider needs to stake
     uint256 public constant MIN_VERIFIERS = 3; // Minimum number of verifiers required
-
+    
     // Mapping of request ID to Request struct
     mapping(uint256 => Request) public requests; 
 

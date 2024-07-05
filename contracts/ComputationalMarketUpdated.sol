@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract ComputationMarket {
     IERC20 public compToken; // The ERC20 token used for payments
 
+    // The different states a request can be in
     enum RequestStates {NO_PROVIDER_SELECTED, PROVIDER_SELECTED_NOT_COMPUTED,
         CHOOSING_VERIFIERS, COMMITMENT_STATE, PROVIDER_REVEAL_STATE, 
         COMMITMENT_REVEAL_STATE, SUCCESS, UNSUCCESSFUL, CANCELLED}
@@ -38,7 +39,7 @@ contract ComputationMarket {
         uint256 providerRevealEndTime; // End time for provider to reveal their private key
         uint256 roundIndex; // Sum of all rounds that are completed and retried
         bytes32 mainProviderAnswerHash; // The answer hash of the main provider
-        RequestStates state;
+        RequestStates state; // The state of the current request
     }
 
     // Structure representing a verification
@@ -399,6 +400,7 @@ contract ComputationMarket {
         Request storage request = requests[requestId];
 
         require(block.timestamp >= request.commitmentRevealEndTime);
+        require(request.state == RequestStates.COMMITMENT_REVEAL_STATE, "Request not in correct state for calculating rewards");
 
         bytes32 majorityVoteHash = bytes32(0);
         uint256 majorityCount = 0;

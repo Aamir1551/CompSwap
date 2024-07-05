@@ -29,7 +29,7 @@ contract ComputationMarket {
         uint256 layerComputeIndex; // Current layer being computed
         uint256 verificationStartTime; // Added to track when verification started
         uint256 commitEndTime; // Added to track end time for commitment phase
-        uint256 revealEndTime; // Added to track end time for reveal phase
+        uint256 commitmentRevealEndTime; // Added to track end time for reveal phase
         uint256 providerRevealEndTime; // End time for provider to reveal their private key
         uint256 roundIndex; // Sum of all rounds that are completed and retried
         bytes32 mainProviderAnswerHash; // The answer hash of the main provider
@@ -74,7 +74,7 @@ contract ComputationMarket {
     event CommitmentSubmitted(uint256 indexed requestId, address indexed verifier);
     
     // Event emitted when a result is completely verified
-    event ResultVerified(uint256 indexed requestId, bool success);
+    event ProviderResultSuccessfullyVerified(uint256 indexed requestId);
     
     // Event emitted when the reveal phase of a round starts
     event RoundRevealStarted(uint256 indexed requestId);
@@ -101,7 +101,20 @@ contract ComputationMarket {
     event VoteSubmitted(uint256 indexed requestId, address indexed verifier, bool agree);
 
     // Event emmited when their is no clear majority when counting votes
-    event NoMajorityForRound(uint256 indexed requestId);
+    event NoMajorityForRound(uint256 indexed requestId, uint256 layerComputeIndex);
+
+    // Event emmited when request is cancelled
+    event requestCancelled(uint256 indexed requestId);
+
+    // Event emmmited when a round is initialised
+    event RoundInitialised(uint256 indexed requestId);
+
+    // Event emitted to let verifiers know they can apply for verification
+    event RoundStartedForVerificationSelection(uint256 indexed requestId, uint256 layerComputeIndex);
+
+    // Event emmited when verifiers disagree with the provider
+    event ProviderResultUnsuccessful(uint256 indexed requestId);
+
 
     constructor(address compTokenAddress) {
         require(compTokenAddress != address(0), "Invalid token address");
@@ -120,15 +133,14 @@ contract ComputationMarket {
         uint256 verificationDeadline, 
         uint256 timeAllocatedForVerification
     ) external {
+        uint256 totalPayment = paymentForProvider + paymentForVerifiers;
+        uint256 layersSize = (numOperations + 999) / 1000;
+
         require(numVerifiers >= MIN_VERIFIERS, "At least 3 verifiers required");
         require(numVerifiers % 2 == 1, "Number of verifiers must be odd");
-        uint256 totalPayment = paymentForProvider + paymentForVerifiers;
         require(compToken.transferFrom(msg.sender, address(this), totalPayment), "Payment failed");
-
-        // TODO:
-        // 1. Have a require statement, that ensures that there is atleast 20 minutes for a verifer to occur,
-        // after the main provider has provided their answer
-        // 2. Create a require statement, that ensures that the verification deadline is enough for the number of rounds required, and the time allocated for the verification of each round
+        require(computationDeadline > block.timestamp, "Computational deadline must be greater than the current time");
+        require(verificationDeadline > block.timestamp + layersSize * (timeAllocatedForVerification * 3));
 
         requestCount++;
         requests[requestCount] = Request({
@@ -149,11 +161,11 @@ contract ComputationMarket {
             chosenVerifiers: new address[](0),
             mainProvider: address(0),
             timeAllocatedForVerification: timeAllocatedForVerification,
-            layers: (numOperations + 999) / 1000,
+            layers: layersSize,
             layerComputeIndex: 0,
             verificationStartTime: 0,
             commitEndTime: 0,
-            revealEndTime: 0,
+            commitmentRevealEndTime: 0,
             providerRevealEndTime: 0,
             roundIndex: 0,
             mainProviderAnswerHash: 0
@@ -173,6 +185,24 @@ contract ComputationMarket {
             randomNumbers[i] = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender, i))) % maxLimit;
         }
         return randomNumbers;
+    }
+
+    // Function to withdraw funds/cancel request in case of an error or cancellation. 
+    // 1. This can only happen before anyone has picked up the request, OR
+    // 2. Request has been picked up, and comptuation deadline has been reached, but not yet computed
+    function cancelRequest(uint256 requestId) external {
+        Request storage request = requests[requestId];
+        require(msg.sender == request.consumer, "Only the consumer can withdraw funds");
+        require(!request.completed, "Request already completed");
+        if(request.mainProvider == address(0)) {
+            compToken.transfer(request.consumer, request.totalPayment);
+            request.completed = true;
+        }
+        require(request.computationDeadline < block.timestamp && !request.hasBeenComputed, "Computation deadline has not yet been reached");
+        uint256 refundAmount = request.totalPayment + (request.paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100;
+        compToken.transfer(request.consumer, refundAmount);
+        request.completed = true;
+        emit requestCancelled(requestId);
     }
 
     // Function to select a request by a provider
@@ -195,22 +225,27 @@ contract ComputationMarket {
         require(request.mainProvider == msg.sender, "Only chosen provider can complete request");
         request.hasBeenComputed = true;
         emit RequestCompleted(requestId, msg.sender);
+        initialiseRound(requestId);
     }
 
+    // Function to initialise a round, and empty all verifiers/chosen verifier lists 
     function initialiseRound(uint256 requestId) internal {
         Request storage request = requests[requestId];
+        require(request.mainProvider != address(0));
         request.verifiers = new address[](0);
         request.chosenVerifiers = new address[](0);
+        emit RoundInitialised(requestId);
+        emit RoundStartedForVerificationSelection(requestId, request.layerComputeIndex);
     }
 
     // Function for verifiers to apply for verification
     function applyForVerificationForRequest(uint256 requestId) external {
         Request storage request = requests[requestId];
+        require(request.hasBeenComputed, "Request not yet computed");
+        require(msg.sender != request.mainProvider, "The main provider cannot apply to become a verifier");
         require(request.verifiers.length < request.numVerifiers, "Verifier limit reached");
         require(compToken.transferFrom(msg.sender, address(this), request.paymentForVerifiers / request.layers / request.numVerifiersSampleSize), "Insufficient stake");
         require(!isVerifierApplied(requestId, msg.sender), "Verifier already applied");
-        require(msg.sender != request.mainProvider, "The main provider cannot apply to become a verifier");
-        require(request.hasBeenComputed == true, "Request not yet computed");
 
         request.verifiers.push(msg.sender);
         emit VerificationApplied(requestId, msg.sender);
@@ -255,7 +290,7 @@ contract ComputationMarket {
         request.verificationStartTime = block.timestamp;
         request.commitEndTime = block.timestamp + request.timeAllocatedForVerification;
         request.providerRevealEndTime = request.commitEndTime + request.timeAllocatedForVerification;
-        request.revealEndTime = request.providerRevealEndTime + request.timeAllocatedForVerification;
+        request.commitmentRevealEndTime = request.providerRevealEndTime + request.timeAllocatedForVerification;
 
         emit CommitmentPhaseStarted(requestId, block.timestamp, request.commitEndTime, request.layerComputeIndex);
     }
@@ -277,7 +312,6 @@ contract ComputationMarket {
         emit CommitmentSubmitted(requestId, msg.sender);
     }
 
-
     // Helper function to check if a verifier is chosen
     function isVerifierChosen(uint256 requestId, address verifier) internal view returns (bool) {
         Request storage request = requests[requestId];
@@ -290,6 +324,7 @@ contract ComputationMarket {
     }
 
     // Function to reveal the provider's private key and hash of the answer
+    // The answer hash is equal to: keccak256(abi.encode(agree, answer)), where agree is true
     function revealProviderKeyAndHash(
         uint256 requestId,
         bytes32 privateKey,
@@ -312,7 +347,7 @@ contract ComputationMarket {
     ) external {
         Request storage request = requests[requestId];
         require(block.timestamp > request.providerRevealEndTime, "Provider reveal phase not ended");
-        require(block.timestamp <= request.revealEndTime, "Reveal phase ended");
+        require(block.timestamp <= request.commitmentRevealEndTime, "Reveal phase ended");
         require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
 
         Verification storage verification = verifications[requestId][msg.sender];
@@ -328,8 +363,11 @@ contract ComputationMarket {
     }
 
     // Function to calculate the majority vote and distribute rewards
-    function calculateMajorityAndReward(uint256 requestId) internal {
+    function calculateMajorityAndReward(uint256 requestId) public {
         Request storage request = requests[requestId];
+
+        require(block.timestamp >= request.commitmentRevealEndTime);
+
         bytes32 majorityVoteHash = bytes32(0);
         uint256 majorityCount = 0;
         bool noMajority = false;
@@ -359,6 +397,17 @@ contract ComputationMarket {
         }
     }
 
+    // Function to handle the case when a majority cannot be determined
+    function handleNoMajority(uint256 requestId) internal {
+        Request storage request = requests[requestId];
+        for (uint256 i = 0; i < request.chosenVerifiers.length; i++) {
+            compToken.transfer(request.chosenVerifiers[i], request.paymentForVerifiers / request.layers / request.numVerifiersSampleSize);
+        }
+        emit NoMajorityForRound(requestId, request.layerComputeIndex);
+        initialiseRound(requestId);
+    }
+
+
     // Function to distribute rewards and penalties after the majority calculation
     // Verifiers are only paid if there is a majority
     function distributeRewardsAndPenalties(uint256 requestId, bytes32 majorityVoteHash) internal returns(bool) {
@@ -377,44 +426,34 @@ contract ComputationMarket {
     function finalizeVerification(uint256 requestId, bool success) internal {
         Request storage request = requests[requestId];
         require(request.layerComputeIndex < request.layers, "All layers have been processed");
-        uint256 stake = (request.paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100;
 
         if (success) {
           if (request.layerComputeIndex < request.layers - 1) {
-              request.layerComputeIndex++;
-              initialiseRound(requestId);
+            request.layerComputeIndex++;
+            initialiseRound(requestId);
           } else {
-              request.completed = true;
-              compToken.transfer(request.mainProvider, stake + request.totalPayment);
-              emit ResultVerified(requestId, true);
+            providerSuccess(requestId);
           }
         } else {
-          // Consumer gets to take the stake of the provider, if the provider did an incorrect calculation
-          compToken.transfer(request.consumer, request.paymentForProvider + stake);
-          request.completed = true;
+            providerFailure(requestId);
         }
     }
 
-    // Function to handle the case when a majority cannot be determined
-    function handleNoMajority(uint256 requestId) internal {
+    function providerSuccess(uint256 requestId) internal {
         Request storage request = requests[requestId];
-        for (uint256 i = 0; i < request.chosenVerifiers.length; i++) {
-            compToken.transfer(request.chosenVerifiers[i], request.paymentForVerifiers / request.layers / request.numVerifiersSampleSize);
-        }
-        emit NoMajorityForRound(requestId);
-        initialiseRound(requestId);
-    }
-
-    // Function to withdraw funds in case of an error or cancellation
-    function withdrawFunds(uint256 requestId) external {
-        Request storage request = requests[requestId];
-        require(msg.sender == request.consumer, "Only the consumer can withdraw funds");
-        require(!request.completed, "Request already completed");
-        require(block.timestamp > request.verificationDeadline, "Verification deadline not reached");
-
-        uint256 refundAmount = request.totalPayment;
-        compToken.transfer(request.consumer, refundAmount);
         request.completed = true;
+        uint256 stake = (request.paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100;
+        compToken.transfer(request.mainProvider, stake + request.totalPayment);
+        emit ProviderResultSuccessfullyVerified(requestId);
+    }
+
+    function providerFailure(uint256 requestId) internal {
+        Request storage request = requests[requestId];
+        // Consumer gets to take the stake of the provider, if the provider did an incorrect calculation
+        uint256 stake = (request.paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100;
+        compToken.transfer(request.consumer, request.paymentForProvider + stake);
+        request.completed = true;
+        emit ProviderResultUnsuccessful(requestId);
     }
 
 }

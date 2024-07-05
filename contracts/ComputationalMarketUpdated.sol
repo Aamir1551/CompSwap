@@ -6,6 +6,10 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract ComputationMarket {
     IERC20 public compToken; // The ERC20 token used for payments
 
+    enum RequestStates {NO_PROVIDER_SELECTED, PROVIDER_SELECTED_NOT_COMPUTED,
+        CHOOSING_VERIFIERS, COMMITMENT_STATE, PROVIDER_REVEAL_STATE, 
+        COMMITMENT_REVEAL_STATE, SUCCESS, UNSUCCESSFUL, CANCELLED}
+
     // Structure representing a computation request
     struct Request {
         address consumer; // The address of the consumer who created the request
@@ -15,6 +19,7 @@ contract ComputationMarket {
         uint256 numVerifiers; // Number of verifiers needed
         string[] inputFileURLs; // URLs of input files
         string operationFileURL; // URL of the file with operations
+        string[] outputFileURLs; // URL of the output files as provided by the main provider
         uint256 computationDeadline; // Deadline for the provider to complete computations
         uint256 verificationDeadline; // Deadline for verifiers to complete verifications
         uint256 totalPayment; // Total payment provided by the consumer
@@ -33,6 +38,7 @@ contract ComputationMarket {
         uint256 providerRevealEndTime; // End time for provider to reveal their private key
         uint256 roundIndex; // Sum of all rounds that are completed and retried
         bytes32 mainProviderAnswerHash; // The answer hash of the main provider
+        RequestStates state;
     }
 
     // Structure representing a verification
@@ -115,7 +121,6 @@ contract ComputationMarket {
     // Event emmited when verifiers disagree with the provider
     event ProviderResultUnsuccessful(uint256 indexed requestId);
 
-
     constructor(address compTokenAddress) {
         require(compTokenAddress != address(0), "Invalid token address");
         compToken = IERC20(compTokenAddress); // Initialize the COMP token contract address
@@ -140,7 +145,7 @@ contract ComputationMarket {
         require(numVerifiers % 2 == 1, "Number of verifiers must be odd");
         require(compToken.transferFrom(msg.sender, address(this), totalPayment), "Payment failed");
         require(computationDeadline > block.timestamp, "Computational deadline must be greater than the current time");
-        require(verificationDeadline > block.timestamp + layersSize * (timeAllocatedForVerification * 3));
+        require(verificationDeadline > computationDeadline + layersSize * (timeAllocatedForVerification * 3));
 
         requestCount++;
         requests[requestCount] = Request({
@@ -150,6 +155,7 @@ contract ComputationMarket {
             numOperations: numOperations,
             numVerifiers: numVerifiers,
             inputFileURLs: inputFileURLs,
+            outputFileURLs: new string[](0),
             operationFileURL: operationFileURL,
             computationDeadline: block.timestamp + computationDeadline,
             verificationDeadline: block.timestamp + verificationDeadline,
@@ -168,7 +174,8 @@ contract ComputationMarket {
             commitmentRevealEndTime: 0,
             providerRevealEndTime: 0,
             roundIndex: 0,
-            mainProviderAnswerHash: 0
+            mainProviderAnswerHash: 0,
+            state: RequestStates.NO_PROVIDER_SELECTED
         });
 
         emit RequestCreated(requestCount, msg.sender);
@@ -202,6 +209,7 @@ contract ComputationMarket {
         uint256 refundAmount = request.totalPayment + (request.paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100;
         compToken.transfer(request.consumer, refundAmount);
         request.completed = true;
+        request.state = RequestStates.CANCELLED;
         emit requestCancelled(requestId);
     }
 
@@ -214,16 +222,18 @@ contract ComputationMarket {
         require(compToken.transferFrom(msg.sender, address(this), stakeAmount), "Insufficient stake");
 
         request.mainProvider = msg.sender;
+        request.state = RequestStates.PROVIDER_SELECTED_NOT_COMPUTED;
 
         emit ProviderSelected(requestId, msg.sender);
     }
 
     // Function to mark a request as completed by the provider
-    function completeRequest(uint256 requestId) external {
+    function completeRequest(uint256 requestId, string[] memory outputFileURLs) external {
         Request storage request = requests[requestId];
         require(block.timestamp <= request.computationDeadline, "Computation deadline passed");
         require(request.mainProvider == msg.sender, "Only chosen provider can complete request");
         request.hasBeenComputed = true;
+        request.outputFileURLs = outputFileURLs;
         emit RequestCompleted(requestId, msg.sender);
         initialiseRound(requestId);
     }
@@ -234,6 +244,7 @@ contract ComputationMarket {
         require(request.mainProvider != address(0));
         request.verifiers = new address[](0);
         request.chosenVerifiers = new address[](0);
+        request.state = RequestStates.CHOOSING_VERIFIERS;
         emit RoundInitialised(requestId);
         emit RoundStartedForVerificationSelection(requestId, request.layerComputeIndex);
     }
@@ -247,12 +258,29 @@ contract ComputationMarket {
         require(compToken.transferFrom(msg.sender, address(this), request.paymentForVerifiers / request.layers / request.numVerifiersSampleSize), "Insufficient stake");
         require(!isVerifierApplied(requestId, msg.sender), "Verifier already applied");
 
+        if(request.verificationDeadline > block.timestamp + (3 * request.timeAllocatedForVerification)) {
+            verificationDeadlinePassedForVeryfying(requestId);
+            return;
+        }
+
         request.verifiers.push(msg.sender);
         emit VerificationApplied(requestId, msg.sender);
 
         if (request.verifiers.length == request.numVerifiers) {
             chooseVerifiersForRequest(requestId);
         }
+    }
+
+    function verificationDeadlinePassedForVeryfying(uint256 requestId) public {
+        Request storage request = requests[requestId];
+        require(request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification));
+        require(request.state == RequestStates.CHOOSING_VERIFIERS);
+        for(uint i=0; i<request.verifiers.length; i++) {
+            address verifier = request.verifiers[request.verifiers.length - 1];
+            request.verifiers.pop();
+            compToken.transfer(verifier, request.paymentForVerifiers / request.layers / request.numVerifiersSampleSize);
+        }
+        providerSuccess(requestId);
     }
 
     // Helper function to check if a verifier has already applied
@@ -286,6 +314,7 @@ contract ComputationMarket {
     function startRound(uint256 requestId) internal {
         Request storage request = requests[requestId];
         require(request.layerComputeIndex < request.layers, "All layers have been processed");
+        require(request.verificationDeadline > block.timestamp + (3 * request.timeAllocatedForVerification));
 
         request.verificationStartTime = block.timestamp;
         request.commitEndTime = block.timestamp + request.timeAllocatedForVerification;
@@ -293,6 +322,7 @@ contract ComputationMarket {
         request.commitmentRevealEndTime = request.providerRevealEndTime + request.timeAllocatedForVerification;
 
         emit CommitmentPhaseStarted(requestId, block.timestamp, request.commitEndTime, request.layerComputeIndex);
+        request.state = RequestStates.COMMITMENT_STATE;
     }
 
 
@@ -336,6 +366,7 @@ contract ComputationMarket {
         require(block.timestamp <= request.providerRevealEndTime, "Provider reveal phase ended");
         request.mainProviderAnswerHash = answerHash;
 
+        request.state = RequestStates.PROVIDER_REVEAL_STATE;
         emit ProviderRevealed(requestId, privateKey, answerHash);
     }
 
@@ -359,6 +390,7 @@ contract ComputationMarket {
         verification.nonce = nonce;
         verification.revealed = true;
 
+        request.state = RequestStates.COMMITMENT_REVEAL_STATE;
         emit RevealVerificationDetails(requestId, block.timestamp, msg.sender);
     }
 
@@ -444,6 +476,7 @@ contract ComputationMarket {
         request.completed = true;
         uint256 stake = (request.paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100;
         compToken.transfer(request.mainProvider, stake + request.totalPayment);
+        request.state = RequestStates.SUCCESS;
         emit ProviderResultSuccessfullyVerified(requestId);
     }
 
@@ -453,6 +486,7 @@ contract ComputationMarket {
         uint256 stake = (request.paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100;
         compToken.transfer(request.consumer, request.paymentForProvider + stake);
         request.completed = true;
+        request.state = RequestStates.UNSUCCESSFUL;
         emit ProviderResultUnsuccessful(requestId);
     }
 

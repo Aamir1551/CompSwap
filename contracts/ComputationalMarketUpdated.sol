@@ -1,0 +1,507 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+contract ComputationMarket {
+    IERC20 public compToken; // The ERC20 token used for payments
+
+    // Structure representing a computation request
+    struct Request {
+        address consumer; // The address of the consumer who created the request
+        uint256 paymentForProvider; // Payment allocated for the provider
+        uint256 paymentForVerifiers; // Total payment allocated for verifiers
+        uint256 numOperations; // Number of operations to be performed
+        uint256 numVerifiers; // Number of verifiers needed
+        string[] inputFileURLs; // URLs of input files
+        string operationFileURL; // URL of the file with operations
+        uint256 computationDeadline; // Deadline for the provider to complete computations
+        uint256 verificationDeadline; // Deadline for verifiers to complete verifications
+        uint256 totalPayment; // Total payment provided by the consumer
+        bool completed; // Indicates if the request is completed
+        bool hasBeenComputed; // Indicates if the computation has been completed
+        uint256 numVerifiersSampleSize; // Number of verifiers sampled for each round
+        address[] verifiers; // List of verifiers who applied
+        address[] chosenVerifiers; // List of verifiers chosen for the round
+        address mainProvider; // The provider who accepted the request
+        uint256 timeAllocatedForVerification; // Time allocated for each verification round
+        uint256 layers; // Number of layers of operations
+        uint256 layerComputeIndex; // Current layer being computed
+        uint256 verificationStartTime; // Added to track when verification started
+        uint256 commitEndTime; // Added to track end time for commitment phase
+        uint256 revealEndTime; // Added to track end time for reveal phase
+        uint256 providerRevealEndTime; // End time for provider to reveal their private key
+        uint256 roundIndex; // Sum of all rounds that are completed and retried
+        bytes32 mainProviderAnswerHash; // The answer hash of the main provider
+    }
+
+    // Structure representing a verification
+    struct Verification {
+        address verifier; // Address of the verifier
+        bool agree; // Indicates if the verifier agrees with the provider's results
+        bytes32 answer; // The result provided by the verifier
+        bytes32 nonce; // Nonce used in the commitment
+        bool revealed; // Indicates if the verifier has revealed their commitment
+        bytes32 computedHash; // Hash of the commitment
+    }
+
+    uint256 public requestCount; // Total number of requests created
+    uint256 public constant PROVIDER_STAKE_PERCENTAGE = 10; // Percentage of payment provider needs to stake
+    uint256 public constant MIN_VERIFIERS = 3; // Minimum number of verifiers required
+
+    // Mapping of request ID to Request struct
+    mapping(uint256 => Request) public requests; 
+
+    // Mapping of request ID and verifier address to Verification struct
+    mapping(uint256 => mapping(address => Verification)) public verifications; 
+
+    // State variable to store votes for each request and for each round. (requestId, vote, roundNum) => number of votes
+    mapping(uint256 => mapping(bytes32 => mapping(uint256 => uint256))) private votes;
+
+    // State variable to store vote addresses for each request and for each round. (requestId, vote, roundNum) => addresses of those that voted
+    mapping(uint256 => mapping(bytes32 => mapping(uint256 => address[]))) private voteAddresses;
+
+    // Event emitted when a new request is created
+    event RequestCreated(uint256 indexed requestId, address indexed consumer);
+    
+    // Event emitted when a provider is selected for a request
+    event ProviderSelected(uint256 indexed requestId, address indexed provider);
+    
+    // Event emitted when a verifier is chosen
+    event VerifierChosen(uint256 indexed requestId, address indexed verifier);
+
+    // Event emitted when a commitment is submitted
+    event CommitmentSubmitted(uint256 indexed requestId, address indexed verifier);
+    
+    // Event emitted when a result is completely verified
+    event ResultVerified(uint256 indexed requestId, bool success);
+    
+    // Event emitted when the reveal phase of a round starts
+    event RoundRevealStarted(uint256 indexed requestId);
+    
+    // Event emitted when a request is completed by the provider
+    event RequestCompleted(uint256 indexed requestId, address indexed provider);
+    
+    // Event emitted when a verifier applies for verification
+    event VerificationApplied(uint256 indexed requestId, address indexed verifier);
+
+    // Event emitted when the commitment phase starts
+    event CommitmentPhaseStarted(uint256 indexed requestId, uint256 startTime, uint256 endTime);
+
+    // Event emitted when the reveal phase ends
+    event RevealVerificationDetails(uint256 indexed requestId, uint256 endTime, address indexed verifier);
+
+    // Event emitted when the provider is slashed
+    event ProviderSlashed(uint256 indexed requestId, address indexed provider);
+
+    // Event emitted when the provider reveals their private key and hash
+    event ProviderRevealed(uint256 indexed requestId, bytes32 privateKey, bytes32 answerHash);
+
+    // Event emitted when a verifier submits their agreement or disagreement
+    event VoteSubmitted(uint256 indexed requestId, address indexed verifier, bool agree);
+
+    // Event emmited when their is no clear majority when counting votes
+    event NoMajorityForRound(uint256 indexed requestId);
+
+    constructor(address compTokenAddress) {
+        require(compTokenAddress != address(0), "Invalid token address");
+        compToken = IERC20(compTokenAddress); // Initialize the COMP token contract address
+    }
+
+    // Function to create a new computation request
+    function createRequest(
+        uint256 paymentForProvider, 
+        uint256 paymentForVerifiers, 
+        uint256 numOperations, 
+        uint256 numVerifiers, 
+        string[] memory inputFileURLs, 
+        string memory operationFileURL, 
+        uint256 computationDeadline, 
+        uint256 verificationDeadline, 
+        uint256 timeAllocatedForVerification
+    ) external {
+        require(numVerifiers >= MIN_VERIFIERS, "At least 3 verifiers required");
+        require(numVerifiers % 2 == 1, "Number of verifiers must be odd");
+        uint256 totalPayment = paymentForProvider + paymentForVerifiers;
+        require(compToken.transferFrom(msg.sender, address(this), totalPayment), "Payment failed");
+
+        // TODO:
+        // 1. Have a require statement, that ensures that there is atleast 20 minutes for a verifer to occur,
+        // after the main provider has provided their answer
+        // 2. Create a require statement, that ensures that the verification deadline is enough for the number of rounds required, and the time allocated for the verification of each round
+
+        requestCount++;
+        requests[requestCount] = Request({
+            consumer: msg.sender,
+            paymentForProvider: paymentForProvider,
+            paymentForVerifiers: paymentForVerifiers,
+            numOperations: numOperations,
+            numVerifiers: numVerifiers,
+            inputFileURLs: inputFileURLs,
+            operationFileURL: operationFileURL,
+            computationDeadline: block.timestamp + computationDeadline,
+            verificationDeadline: block.timestamp + verificationDeadline,
+            totalPayment: totalPayment,
+            completed: false,
+            hasBeenComputed: false,
+            numVerifiersSampleSize: numVerifiers / 2 + 1,
+            verifiers: new address[](0),
+            chosenVerifiers: new address[](0),
+            mainProvider: address(0),
+            timeAllocatedForVerification: timeAllocatedForVerification,
+            layers: (numOperations + 999) / 1000,
+            layerComputeIndex: 0,
+            verificationStartTime: 0,
+            commitEndTime: 0,
+            revealEndTime: 0,
+            providerRevealEndTime: 0,
+            mainProviderAnswerhash: 0
+        });
+
+        emit RequestCreated(requestCount, msg.sender);
+    }
+
+    // Function to get request details
+    function getRequestDetails(uint256 requestId) external view returns (Request memory) {
+        return requests[requestId];
+    }
+
+    function getRandomNumbers(uint256 maxLimit, uint256 count) private view returns (uint256[] memory) {
+        uint256[] memory randomNumbers = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            randomNumbers[i] = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender, i))) % maxLimit;
+        }
+        return randomNumbers;
+    }
+
+    // Function to select a request by a provider
+    function selectRequest(uint256 requestId) external {
+        Request storage request = requests[requestId];
+        require(block.timestamp <= request.computationDeadline, "Computation deadline passed");
+        require(request.mainProvider == address(0), "Provider already selected");
+        uint256 stakeAmount = (request.paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100;
+        require(compToken.transferFrom(msg.sender, address(this), stakeAmount), "Insufficient stake");
+
+        request.mainProvider = msg.sender;
+
+        emit ProviderSelected(requestId, msg.sender);
+    }
+
+    // Function to mark a request as completed by the provider
+    function completeRequest(uint256 requestId) external {
+        Request storage request = requests[requestId];
+        require(block.timestamp <= request.computationDeadline, "Computation deadline passed");
+        require(request.mainProvider == msg.sender, "Only chosen provider can complete request");
+        request.hasBeenComputed = true;
+        emit RequestCompleted(requestId, msg.sender);
+    }
+
+    // Function for verifiers to apply for verification
+    function applyForVerificationForRequest(uint256 requestId) external {
+        Request storage request = requests[requestId];
+        require(request.verifiers.length < request.numVerifiers, "Verifier limit reached");
+        require(compToken.transferFrom(msg.sender, address(this), request.paymentForVerifiers / request.layers / request.numVerifiersSampleSize), "Insufficient stake");
+        require(!isVerifierApplied(requestId, msg.sender), "Verifier already applied");
+
+        request.verifiers.push(msg.sender);
+        emit VerificationApplied(requestId, msg.sender);
+
+        if (request.verifiers.length == request.numVerifiers) {
+            chooseVerifiersForRequest(requestId);
+        }
+    }
+
+    // Helper function to check if a verifier has already applied
+    function isVerifierApplied(uint256 requestId, address verifier) internal view returns (bool) {
+        Request storage request = requests[requestId];
+        for (uint256 i = 0; i < request.verifiers.length; i++) {
+            if (request.verifiers[i] == verifier) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function chooseVerifiersForRequest(uint256 requestId) internal {
+        Request storage request = requests[requestId];
+        require(request.hasBeenComputed, "Request has not been computed yet");
+        uint256[] memory randomNumbers = getRandomNumbers(request.verifiers.length, request.numVerifiersSampleSize);
+        for (uint256 i = 0; i < request.numVerifiersSampleSize; i++) {
+            uint256 randChosen = randomNumbers[i] % (request.verifiers.length - i);
+            address chosenVerifier = request.verifiers[randChosen];
+            request.chosenVerifiers.push(chosenVerifier);
+            request.verifiers[randChosen] = request.verifiers[request.verifiers.length - i - 1];
+            compToken.transfer(request.verifiers[request.verifiers.length - i - 1], request.paymentForVerifiers / request.layers / request.numVerifiersSampleSize);
+            request.verifiers.pop();
+            emit VerifierChosen(requestId, chosenVerifier);
+        }
+        startRound(requestId);
+    }
+
+    // Function to start a round of verification
+    function startRound(uint256 requestId) internal {
+        Request storage request = requests[requestId];
+        require(request.layerComputeIndex < request.layers, "All layers have been processed");
+
+        request.verificationStartTime = block.timestamp;
+        request.commitEndTime = block.timestamp + request.timeAllocatedForVerification;
+        request.providerRevealEndTime = request.commitEndTime + request.timeAllocatedForVerification;
+        request.revealEndTime = request.providerRevealEndTime + request.timeAllocatedForVerification;
+
+        emit CommitmentPhaseStarted(requestId, block.timestamp, request.commitEndTime);
+    }
+
+
+    // Function to submit a commitment by a verifier
+    function submitCommitment(
+        uint256 requestId,
+        bytes32 computedHash
+    ) external {
+        Request storage request = requests[requestId];
+        require(block.timestamp <= request.commitEndTime, "Commitment phase ended");
+        require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
+
+        Verification storage verification = verifications[requestId][msg.sender];
+        verification.computedHash = computedHash;
+        verification.revealed = false; // we set it to false, since we might come back to this again for a different round
+
+        emit CommitmentSubmitted(requestId, msg.sender);
+    }
+
+
+    // Helper function to check if a verifier is chosen
+    function isVerifierChosen(uint256 requestId, address verifier) internal view returns (bool) {
+        Request storage request = requests[requestId];
+        for (uint256 i = 0; i < request.chosenVerifiers.length; i++) {
+            if (request.chosenVerifiers[i] == verifier) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Function to reveal the provider's private key and hash of the answer
+    function revealProviderKeyAndHash(
+        uint256 requestId,
+        bytes32 privateKey,
+        bytes32 answerHash
+    ) external {
+        Request storage request = requests[requestId];
+        require(msg.sender == request.mainProvider, "Only the main provider can reveal the key and hash");
+        require(block.timestamp > request.commitEndTime, "Commitment phase not ended");
+        require(block.timestamp <= request.providerRevealEndTime, "Provider reveal phase ended");
+        request.mainProviderAnswerHash = answerHash;
+
+        emit ProviderRevealed(requestId, privateKey, answerHash);
+    }
+
+    function revealCommitment(
+        uint256 requestId,
+        bool agree,
+        bytes32 answer,
+        bytes32 nonce
+    ) external {
+        Request storage request = requests[requestId];
+        require(block.timestamp > request.providerRevealEndTime, "Provider reveal phase not ended");
+        require(block.timestamp <= request.revealEndTime, "Reveal phase ended");
+        require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
+
+        Verification storage verification = verifications[requestId][msg.sender];
+        require(!verification.revealed, "Commitment already revealed");
+        require(keccak256(abi.encode(agree, answer, nonce, msg.sender)) == verification.computedHash, "Invalid reveal values");
+
+        verification.agree = agree;
+        verification.answer = answer;
+        verification.nonce = nonce;
+        verification.revealed = true;
+
+        emit RevealVerificationDetails(requestId, block.timestamp, msg.sender);
+    }
+
+    // Function to calculate the majority vote and distribute rewards
+    function calculateMajorityAndReward(uint256 requestId) internal {
+        Request storage request = requests[requestId];
+        bytes32 majorityVoteHash = bytes32(0);
+        uint256 majorityCount = 0;
+        bool noMajority = false;
+
+        for (uint256 i = 0; i < request.numVerifiersSampleSize; i++) {
+            Verification storage verification = verifications[requestId][request.chosenVerifiers[i]];
+            if (verification.revealed) {
+                bytes32 voteHash = keccak256(abi.encode(verification.answer, verification.agree));
+                votes[requestId][voteHash][request.roundIndex]++;
+                voteAddresses[requestId][voteHash][request.roundIndex].push(verification.verifier);
+                if (votes[requestId][voteHash] == majorityCount) {
+                    noMajority = true;
+                } else if (votes[requestId][voteHash][request.roundIndex] > majorityCount) {
+                    noMajority = false;
+                    majorityCount = votes[requestId][voteHash];
+                    majorityVoteHash = voteHash;
+                }
+            }
+        }
+        
+        if (noMajority) {
+            handleNoMajority(requestId);
+        } else {
+            bool success = distributeRewardsAndPenalties(requestId, majorityVoteHash);
+            finalizeVerification(requestId, success);
+        }
+    }
+
+    // Function to distribute rewards and penalties after the majority calculation
+    // Verifiers are only paid if there is a majority
+    function distributeRewardsAndPenalties(uint256 requestId, bytes32 majorityVoteHash) internal returns(bool) {
+        Request storage request = requests[requestId];
+        address[] storage majorityVoters = voteAddresses[requestId][majorityVoteHash][request.roundIndex];
+        uint256 reward = request.paymentForVerifiers / request.layers / majorityVoters.length;
+        uint256 penalty = request.paymentForVerifiers / request.layers / request.numVerifiersSampleSize;
+
+        for (uint256 i = 0; i < majorityVoters.length; i++) {
+            compToken.transfer(majorityVoters[i], reward + penalty);
+        }
+        return majorityVoteHash == request.mainProviderAnswerHash;
+    }
+
+    // Function to finalize the verification and compute the next layer
+    function finalizeVerification(uint256 requestId, bool success) internal {
+        Request storage request = requests[requestId];
+        require(request.layerComputeIndex < request.layers, "All layers have been processed");
+
+        if (success) {
+          if (request.layerComputeIndex < request.layers - 1) {
+              request.layerComputeIndex++;
+              startRound(requestId);
+          } else {
+              request.completed = true;
+              compToken.transfer(request.mainProvider, request.totalPayment);
+              emit ResultVerified(requestId, true);
+          }
+        } else {
+          // Consumer gets to take the stake of the provider, if the provider did an incorrect calculation
+          compToken.transfer(request.consumer, request.paymentForProvider + (request.paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100);
+          request.completed = true;
+        }
+    }
+
+    // Function to handle the case when a majority cannot be determined
+    function handleNoMajority(uint256 requestId) internal {
+        Request storage request = requests[requestId];
+        for (uint256 i = 0; i < request.chosenVerifiers.length; i++) {
+            compToken.transfer(request.chosenVerifiers[i], request.paymentForVerifiers / request.layers / request.numVerifiersSampleSize);
+        }
+        // Restart the round with new verifiers
+        request.verifiers = new address[](0);
+        request.chosenVerifiers = new address[](0);
+        emit NoMajorityForRound(requestId);
+    }
+
+    // Function to trigger the next step if deadlines are missed
+    function triggerNextStep(uint256 requestId) external {
+        Request storage request = requests[requestId];
+
+        if (block.timestamp > request.commitEndTime && block.timestamp <= request.providerRevealEndTime) {
+            handleCommitmentPhaseTimeout(requestId);
+        } else if (block.timestamp > request.providerRevealEndTime && block.timestamp <= request.revealEndTime) {
+            handleProviderRevealDeadline(requestId);
+        } else if (block.timestamp > request.revealEndTime) {
+            handleRevealPhaseTimeout(requestId);
+        }
+    }
+
+    // Function to handle commitment phase timeout
+    function handleCommitmentPhaseTimeout(uint256 requestId) public {
+        Request storage request = requests[requestId];
+        require(block.timestamp > request.commitEndTime, "Commitment phase not ended");
+
+        // Check if commitments were made, if not, penalize the provider
+        // why is the provider being penalized here?
+        bool commitmentsMade = false;
+        for (uint256 i = 0; i < request.numVerifiersSampleSize; i++) {
+            if (verifications[requestId][request.chosenVerifiers[i]].computedHash != bytes32(0)) {
+                commitmentsMade = true;
+                break;
+            }
+        }
+
+        if (!commitmentsMade) {
+            handleProviderRevealDeadline(requestId);
+        }
+    }
+
+
+    // Function to withdraw funds in case of an error or cancellation
+    function withdrawFunds(uint256 requestId) external {
+        Request storage request = requests[requestId];
+        require(msg.sender == request.consumer, "Only the consumer can withdraw funds");
+        require(!request.completed, "Request already completed");
+        require(block.timestamp > request.verificationDeadline, "Verification deadline not reached");
+
+        uint256 refundAmount = request.totalPayment;
+        compToken.transfer(request.consumer, refundAmount);
+        request.completed = true;
+    }
+
+
+
+
+    // TODO: 
+    // 1. What is handleProviderevealDeadline doing? 
+    // 2. Also, shoudl we be having request.completd = True in the function revealProviderKeyAndHash?
+    // Function to handle provider reveal deadline
+    /*function handleProviderRevealDeadline(uint256 requestId) public {
+        Request storage request = requests[requestId];
+        require(block.timestamp > request.providerRevealEndTime, "Provider reveal deadline not reached");
+
+        if (!request.completed) {
+            // Slash the provider's stake and refund the verifiers
+            uint256 stakeAmount = (request.paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100;
+            compToken.transfer(address(this), stakeAmount);
+            for (uint256 i = 0; i < request.chosenVerifiers.length; i++) {
+                compToken.transfer(request.chosenVerifiers[i], request.paymentForVerifiers / request.layers / request.numVerifiersSampleSize);
+            }
+            request.completed = true;
+            emit ProviderSlashed(requestId, request.mainProvider);
+        }
+    }*/
+
+
+
+
+    /*// Function to handle the expiration of the verification deadline
+    function handleVerificationDeadline(uint256 requestId) public {
+        Request storage request = requests[requestId];
+        require(block.timestamp > request.verificationDeadline, "Verification deadline not reached");
+
+        // Use the current verifier commitments to determine the majority
+        calculateMajorityAndReward(requestId);
+    }*/
+
+
+
+
+    /*// Function to handle reveal phase timeout
+    function handleRevealPhaseTimeout(uint256 requestId) public {
+        Request storage request = requests[requestId];
+        require(block.timestamp > request.revealEndTime, "Reveal phase not ended");
+
+        // Check if reveals were made, if not, penalize the provider
+        // why is the provider being penalised here?
+        bool revealsMade = false;
+        for (uint256 i = 0; i < request.numVerifiersSampleSize; i++) {
+            if (verifications[requestId][request.chosenVerifiers[i]].revealed) {
+                revealsMade = true;
+                break;
+            }
+        }
+
+        if (!revealsMade) {
+            handleProviderRevealDeadline(requestId);
+        } else {
+            calculateMajorityAndReward(requestId);
+        }
+    } */
+
+
+
+}

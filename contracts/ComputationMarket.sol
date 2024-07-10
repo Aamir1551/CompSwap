@@ -150,7 +150,13 @@ contract ComputationMarket {
 
         require(numVerifiers >= MIN_VERIFIERS, "At least 3 verifiers required");
         require(numVerifiers % 2 == 1, "Number of verifiers must be odd");
+
+        uint256 allowance = compToken.allowance(msg.sender, address(this));
+        uint256 balance = compToken.balanceOf(msg.sender);
+        require(allowance >= totalPayment, "Payment failed");
+        require(balance >= totalPayment, "Payment failed");
         require(compToken.transferFrom(msg.sender, address(this), totalPayment), "Payment failed");
+
         require(computationDeadline > block.timestamp, "Computational deadline must be greater than the current time");
         require(verificationDeadline > computationDeadline + layerCount * (timeAllocatedForVerification * 3), "Verification deadline must be sufficient enough for all rounds required");
         require(numVerifiers >= numVerifiersSampleSize, "Not enough verifiers to choose from. numVerifiers must be greater than numVerifiersSampleSize");
@@ -237,7 +243,17 @@ contract ComputationMarket {
         Request storage request = requests[requestId];
         require(block.timestamp <= request.computationDeadline, "Computation deadline passed");
         require(request.mainProvider == address(0), "Provider already selected");
-        require(compToken.transferFrom(msg.sender, address(this), request.stake), "Insufficient stake");
+
+        uint256 stakeAmount = request.stake;
+        uint256 allowance = compToken.allowance(msg.sender, address(this));
+        uint256 balance = compToken.balanceOf(msg.sender);
+
+        require(allowance >= stakeAmount, "Insufficient stake");
+        require(balance >= stakeAmount, "Insufficient stake");
+
+        require(compToken.transferFrom(msg.sender, address(this), stakeAmount), "Insufficient stake");
+
+
 
         request.mainProvider = msg.sender;
         request.state = RequestStates.PROVIDER_SELECTED_NOT_COMPUTED;
@@ -273,7 +289,13 @@ contract ComputationMarket {
         require(request.hasBeenComputed, "Request not yet computed");
         require(msg.sender != request.mainProvider, "The main provider cannot apply to become a verifier");
         require(request.verifiers.length < request.numVerifiers, "Verifier limit reached");
+
+        uint256 allowance = compToken.allowance(msg.sender, address(this));
+        uint256 balance = compToken.balanceOf(msg.sender);
+        require(allowance >= request.paymentPerRoundForVerifiers, "Insufficient stake");
+        require(balance >= request.paymentPerRoundForVerifiers, "Insufficient stake");
         require(compToken.transferFrom(msg.sender, address(this), request.paymentPerRoundForVerifiers), "Insufficient stake");
+
         require(!isVerifierApplied(requestId, msg.sender), "Verifier already applied");
 
         if(request.verificationDeadline <= block.timestamp + (3 * request.timeAllocatedForVerification)) {
@@ -311,22 +333,6 @@ contract ComputationMarket {
         }
         return false;
     }
-
-    /*function chooseVerifiersForRequest(uint256 requestId) internal {
-        Request storage request = requests[requestId];
-        require(request.hasBeenComputed, "Request has not been computed yet");
-        uint256[] memory randomNumbers = getRandomNumbers(request.verifiers.length, request.numVerifiersSampleSize);
-        for (uint256 i = 0; i < request.numVerifiersSampleSize; i++) {
-            uint256 randChosen = randomNumbers[i] % (request.verifiers.length - i);
-            address chosenVerifier = request.verifiers[randChosen];
-            request.chosenVerifiers.push(chosenVerifier);
-            request.verifiers[randChosen] = request.verifiers[request.verifiers.length - i - 1];
-            compToken.transfer(request.verifiers[request.verifiers.length - i - 1], request.paymentPerRoundForVerifiers);
-            request.verifiers.pop();
-            emit VerifierChosen(requestId, chosenVerifier);
-        }
-        startRound(requestId);
-    }*/
 
    function chooseVerifiersForRequest(uint256 requestId) internal {
         Request storage request = requests[requestId];

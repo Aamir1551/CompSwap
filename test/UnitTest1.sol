@@ -136,9 +136,9 @@ contract ComputationMarketTest is Test {
         applyForVerification(v2);
         applyForVerification(v3);
 
-        bytes32 computedHash1 = keccak256(abi.encode(true, keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), v1));
-        bytes32 computedHash2 = keccak256(abi.encode(true, keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), v2));
-        bytes32 computedHash3 = keccak256(abi.encode(false, keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), v3));
+        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), v1));
+        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), v2));
+        bytes32 computedHash3 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), v3));
 
         submitCommitment(v1, computedHash1);
         submitCommitment(v2, computedHash2);
@@ -190,9 +190,9 @@ contract ComputationMarketTest is Test {
         applyForVerification(verifier3);
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        bytes32 computedHash1 = keccak256(abi.encode(false, keccak256(abi.encodePacked("wrong_answer1")), keccak256(abi.encodePacked("nonce1")), verifier1));
-        bytes32 computedHash2 = keccak256(abi.encode(false, keccak256(abi.encodePacked("wrong_answer2")), keccak256(abi.encodePacked("nonce2")), verifier2));
-        bytes32 computedHash3 = keccak256(abi.encode(false, keccak256(abi.encodePacked("wrong_answer3")), keccak256(abi.encodePacked("nonce3")), verifier3));
+        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer1")), keccak256(abi.encodePacked("nonce1")), verifier1));
+        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer2")), keccak256(abi.encodePacked("nonce2")), verifier2));
+        bytes32 computedHash3 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer3")), keccak256(abi.encodePacked("nonce3")), verifier3));
 
         submitCommitment(verifier1, computedHash1);
         submitCommitment(verifier2, computedHash2);
@@ -233,9 +233,9 @@ contract ComputationMarketTest is Test {
         applyForVerification(verifier3);
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        bytes32 computedHash1 = keccak256(abi.encode(false, keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
-        bytes32 computedHash2 = keccak256(abi.encode(false, keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
-        bytes32 computedHash3 = keccak256(abi.encode(false, keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), verifier3));
+        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
+        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
+        bytes32 computedHash3 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), verifier3));
 
         submitCommitment(verifier1, computedHash1);
         submitCommitment(verifier2, computedHash2);
@@ -275,9 +275,9 @@ contract ComputationMarketTest is Test {
         applyForVerification(verifier3);
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        bytes32 computedHash1 = keccak256(abi.encode(true, keccak256(abi.encodePacked("answer1")), keccak256(abi.encodePacked("nonce1")), verifier1));
-        bytes32 computedHash2 = keccak256(abi.encode(false, keccak256(abi.encodePacked("answer2")), keccak256(abi.encodePacked("nonce2")), verifier2));
-        bytes32 computedHash3 = keccak256(abi.encode(true, keccak256(abi.encodePacked("answer3")), keccak256(abi.encodePacked("nonce3")), verifier3));
+        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("answer1")), keccak256(abi.encodePacked("nonce1")), verifier1));
+        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("answer2")), keccak256(abi.encodePacked("nonce2")), verifier2));
+        bytes32 computedHash3 = keccak256(abi.encode(keccak256(abi.encodePacked("answer3")), keccak256(abi.encodePacked("nonce3")), verifier3));
 
         submitCommitment(verifier1, computedHash1);
         submitCommitment(verifier2, computedHash2);
@@ -317,8 +317,8 @@ contract ComputationMarketTest is Test {
         applyForVerification(verifier3);
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        bytes32 computedHash1 = keccak256(abi.encode(true, keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
-        bytes32 computedHash2 = keccak256(abi.encode(true, keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
+        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
+        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
 
         submitCommitment(verifier1, computedHash1);
         submitCommitment(verifier2, computedHash2);
@@ -353,9 +353,9 @@ contract ComputationMarketTest is Test {
         applyForVerification(verifier3);
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        bytes32 computedHash1 = keccak256(abi.encode(true, keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
-        bytes32 computedHash2 = keccak256(abi.encode(true, keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
-        bytes32 computedHash3 = keccak256(abi.encode(false, keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), verifier3));
+        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
+        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
+        bytes32 computedHash3 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), verifier3));
 
         submitCommitment(verifier1, computedHash1);
         submitCommitment(verifier2, computedHash2);

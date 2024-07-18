@@ -147,7 +147,7 @@ contract ComputationMarketTest is Test {
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
         vm.startPrank(request.chosenVerifiers[0]);
-        bytes32 computedHash = keccak256(abi.encode(true, keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce")), request.chosenVerifiers[0]));
+        bytes32 computedHash = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce")), request.chosenVerifiers[0]));
 
         market.submitCommitment(0, computedHash);
         vm.stopPrank();

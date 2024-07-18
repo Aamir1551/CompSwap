@@ -151,7 +151,7 @@ contract ComputationMarketTest is Test {
         // Submit commitment for the chosen verifiers
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
             uint256 verifierIndex = findVerifierIndex(chosenVerifiers[i], verifiers);
-            bytes32 computedHash = keccak256(abi.encode(agreements[verifierIndex], answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
+            bytes32 computedHash = keccak256(abi.encode(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
             submitCommitment(chosenVerifiers[i], computedHash);
         }
 
@@ -386,7 +386,7 @@ contract ComputationMarketTest is Test {
 
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
             uint256 verifierIndex = findVerifierIndex(chosenVerifiers[i], verifiers);
-            bytes32 computedHash = keccak256(abi.encode(agreements[verifierIndex], answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
+            bytes32 computedHash = keccak256(abi.encode(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
             submitCommitment(chosenVerifiers[i], computedHash);
         }
 
@@ -447,7 +447,7 @@ contract ComputationMarketTest is Test {
 
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
             uint256 verifierIndex = findVerifierIndex(chosenVerifiers[i], verifiers);
-            bytes32 computedHash = keccak256(abi.encode(agreements[verifierIndex], answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
+            bytes32 computedHash = keccak256(abi.encode(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
             submitCommitment(chosenVerifiers[i], computedHash);
         }
 

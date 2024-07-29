@@ -24,7 +24,7 @@ contract ComputationMarket {
         uint256 computationDeadline; // Deadline for the provider to complete computations
         uint256 verificationDeadline; // Deadline for verifiers to complete verifications
         uint256 totalPayment; // Total payment provided by the consumer
-        bool completed; // Indicates if the request is completed
+        bool completed; // Indicates if the request is completed. If true, the request has reached the end of its lifecycle
         bool hasBeenComputed; // Indicates if the computation has been completed
         uint256 numVerifiersSampleSize; // Number of verifiers sampled for each round
         address[] verifiers; // List of verifiers who applied
@@ -43,6 +43,7 @@ contract ComputationMarket {
         uint256 stake; // Amount staked by the provider
         uint256 paymentPerRoundForVerifiers; // Amount the consumer will pay for verification
         uint256 totalPaidForVerification; // Running total of amount paid to verifiers
+        uint256 protocolVersion; // Version of the protocol we are following
     }
 
     // Structure representing a verification
@@ -141,7 +142,8 @@ contract ComputationMarket {
         uint256 computationDeadline, 
         uint256 verificationDeadline, 
         uint256 timeAllocatedForVerification,
-        uint256 numVerifiersSampleSize
+        uint256 numVerifiersSampleSize,
+        uint256 protocolVersion
     ) external {
         uint256 layerCount = (numOperations + 999) / 1000;
         uint256 totalPaymentForVerifiers = paymentPerRoundForVerifiers * numVerifiersSampleSize * layerCount;
@@ -189,7 +191,8 @@ contract ComputationMarket {
             state: RequestStates.NO_PROVIDER_SELECTED,
             stake: (paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100,
             paymentPerRoundForVerifiers: paymentPerRoundForVerifiers,
-            totalPaidForVerification: 0
+            totalPaidForVerification: 0,
+            protocolVersion: protocolVersion 
         });
         requestCount++;
 
@@ -535,6 +538,15 @@ contract ComputationMarket {
 
     function providerSuccess(uint256 requestId) internal {
         Request storage request = requests[requestId];
+        request.completed = true;
+        compToken.transfer(request.mainProvider, request.stake + request.paymentForProvider);
+        request.state = RequestStates.SUCCESS;
+        emit ProviderResultSuccessfullyVerified(requestId);
+    }
+
+    function providerEarlySuccessCall(uint256 requestId) public {
+        Request storage request = requests[requestId];
+        require(block.timestamp >= request.verificationDeadline && request.completed && request.state != RequestStates.UNSUCCESSFUL && !request.completed);
         request.completed = true;
         compToken.transfer(request.mainProvider, request.stake + request.paymentForProvider);
         request.state = RequestStates.SUCCESS;

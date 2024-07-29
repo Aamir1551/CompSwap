@@ -44,6 +44,9 @@ contract ComputationMarket {
         uint256 paymentPerRoundForVerifiers; // Amount the consumer will pay for verification
         uint256 totalPaidForVerification; // Running total of amount paid to verifiers
         uint256 protocolVersion; // Version of the protocol we are following
+        bytes32 majorityVoteHash;
+        uint256 majorityCount;
+        bool existMajority;
     }
 
     // Structure representing a verification
@@ -192,7 +195,10 @@ contract ComputationMarket {
             stake: (paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100,
             paymentPerRoundForVerifiers: paymentPerRoundForVerifiers,
             totalPaidForVerification: 0,
-            protocolVersion: protocolVersion 
+            protocolVersion: protocolVersion,
+            majorityVoteHash: bytes32(0),
+            majorityCount: 0,
+            existMajority: true
         });
         requestCount++;
 
@@ -278,6 +284,12 @@ contract ComputationMarket {
         request.verifiers = new address[](0);
         request.chosenVerifiers = new address[](0);
         request.state = RequestStates.CHOOSING_VERIFIERS;
+
+        request.majorityVoteHash = bytes32(0);
+        request.majorityCount = 0;
+        request.existMajority = true;
+        request.roundIndex += 1;
+
         emit RoundInitialised(requestId);
         emit RoundStartedForVerificationSelection(requestId, request.layerComputeIndex);
     }
@@ -452,6 +464,18 @@ contract ComputationMarket {
         verification.revealed = true;
         verification.verifier = msg.sender;
 
+        bytes32 voteHash = keccak256(abi.encode(verification.answer, verification.agree));
+        votes[requestId][voteHash][request.roundIndex]++;
+        voteAddresses[requestId][voteHash][request.roundIndex].push(verification.verifier);
+
+        if (votes[requestId][voteHash][request.roundIndex] == request.majorityCount) {
+            request.existMajority = false;
+        } else if (votes[requestId][voteHash][request.roundIndex] > request.majorityCount) {
+            request.existMajority = true;
+            request.majorityCount = votes[requestId][voteHash][request.roundIndex];
+            request.majorityVoteHash = voteHash;
+        }
+
         request.state = RequestStates.COMMITMENT_REVEAL_STATE;
         emit RevealVerificationDetails(requestId, block.timestamp, msg.sender);
     }
@@ -463,29 +487,9 @@ contract ComputationMarket {
         require(block.timestamp >= request.commitmentRevealEndTime, "commitment stage has not yet completed");
         require(request.state == RequestStates.COMMITMENT_REVEAL_STATE, "Request not in correct state for calculating rewards");
 
-        bytes32 majorityVoteHash = bytes32(0);
-        uint256 majorityCount = 0;
-        bool existMajority = true;
-
-        request.roundIndex += 1;
-        for (uint256 i = 0; i < request.numVerifiersSampleSize; i++) {
-            Verification storage verification = verifications[requestId][request.chosenVerifiers[i]];
-            if (verification.revealed) {
-                bytes32 voteHash = keccak256(abi.encode(verification.answer, verification.agree));
-                votes[requestId][voteHash][request.roundIndex]++;
-                voteAddresses[requestId][voteHash][request.roundIndex].push(verification.verifier);
-                if (votes[requestId][voteHash][request.roundIndex] == majorityCount) {
-                    existMajority = false;
-                } else if (votes[requestId][voteHash][request.roundIndex] > majorityCount) {
-                    existMajority = true;
-                    majorityCount = votes[requestId][voteHash][request.roundIndex];
-                    majorityVoteHash = voteHash;
-                }
-            }
-        }
         
-        if (existMajority) {
-            bool success = distributeRewardsAndStakes(requestId, majorityVoteHash);
+        if (request.existMajority) {
+            bool success = distributeRewardsAndStakes(requestId, request.majorityVoteHash);
             finalizeVerification(requestId, success);
         } else {
             handleNoMajority(requestId);

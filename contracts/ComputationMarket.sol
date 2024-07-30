@@ -56,6 +56,10 @@ contract ComputationMarket {
 
     struct RoundDetails {
         mapping(bytes32 => uint256) votes; // Vote tally for the round. (voteHash => number of votes)
+        mapping(address => bool) verifiersTriggered; // Map of verifiers and whether they have triggered the round
+        mapping(address => bool) verifiersApplied; // Map of verifiers and whether they have applied for the round
+        mapping(address => bool) verifiersChosen; // Map of verifiers and whether they have applied for the round
+
         uint256 roundIndex; // Sum of all rounds that are completed and retried so far
         uint256 layerComputeIndex; // The index into the DAG on which layer this round was operating on
         uint256 verificationStartTime; // Added to track when verification started
@@ -75,19 +79,10 @@ contract ComputationMarket {
     mapping(uint256 => Request) public requests; 
 
     // Mapping of request ID and round number to RoundDetails struct
-    mapping(uint256 => mapping(uint256 => RoundDetails)) public roundDetails;
+    mapping(uint256 => mapping(uint256 => RoundDetails)) private roundDetails;
 
     // Mapping of request ID, round number and verifier address to Verification struct
-    mapping(uint256 => mapping(uint256 => mapping(address => Verification))) public verifications; 
-
-    // Mapping of request Id and round number to whether the verifier has triggered for verification
-    mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifierTriggered;
-
-    // Mapping of request Id and round number to check whether the verifier has already applied to become a verifier
-    mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifierApplied;
-
-    // Mapping of request Id and round number to check whether the verifier has been chosen for that round
-    mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifiersChosen;
+    mapping(uint256 => mapping(uint256 => mapping(address => Verification))) private verifications; 
 
     // Mapping of request Id and round number to check whether the verifier has not been chosen for that round
     mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifiersUnchosen;
@@ -314,11 +309,9 @@ contract ComputationMarket {
         require(compToken.transferFrom(msg.sender, address(this), request.paymentPerRoundForVerifiers), "Insufficient stake");
 
         require(request.verificationDeadline >= block.timestamp + (3 * request.timeAllocatedForVerification), "Not enough time to perform round before verification deadline");
+        require(!roundDetails[requestId][request.roundIndex].verifiersApplied[msg.sender], "Verifier already applied");
 
-        //require(!isVerifierApplied(requestId, msg.sender), "Verifier already applied");
-        require(!verifierApplied[requestId][request.roundIndex][msg.sender], "Verifier already applied");
-        verifierApplied[requestId][request.roundIndex][msg.sender] = true;
-
+        roundDetails[requestId][request.roundIndex].verifiersApplied[msg.sender] = true;
         request.verifiers.push(msg.sender);
         emit VerificationApplied(requestId, msg.sender, request.layerComputeIndex);
 
@@ -332,9 +325,9 @@ contract ComputationMarket {
     function verificationDeadlinePassedForVeryfying(uint256 requestId, uint256 roundNum) public {
         Request storage request = requests[requestId];
         require(request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification), "Verification deadline has not yet passed");
-        require(verifierApplied[requestId][roundNum][msg.sender], "Verifier has either already recieved stake, or did not apply for verification");
-
-        verifierApplied[requestId][roundNum][msg.sender] = false;
+        require(roundDetails[requestId][roundNum].verifiersApplied[msg.sender], "Verifier has either already recieved stake, or did not apply for verification");
+        
+        roundDetails[requestId][roundNum].verifiersApplied[msg.sender] = false;
         compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
     }
 
@@ -346,8 +339,8 @@ contract ComputationMarket {
         require(request.verifiers.length >= request.numVerifiersSampleSize, "Not enough verifiers to choose from");
         require(request.verificationDeadline >= block.timestamp + (3 * request.timeAllocatedForVerification), "Not enough time to perform round before verification deadline");
 
-        require(!verifierTriggered[requestId][request.roundIndex][msg.sender], "Verifier has already triggered");
-        verifierTriggered[requestId][request.roundIndex][msg.sender] = true;
+        require(!roundDetails[requestId][request.roundIndex].verifiersTriggered[msg.sender], "Verifier has already triggered");
+        roundDetails[requestId][request.roundIndex].verifiersTriggered[msg.sender] = true;
 
         if(request.verifierSelectionCount < request.numVerifiersSampleSize) {
             uint256 randNum = getRandomNumber(request.numVerifiers-1 - request.verifierSelectionCount) + request.verifierSelectionCount;
@@ -358,7 +351,7 @@ contract ComputationMarket {
             request.verifiers[randNum] = swap2;
             request.verifiers[request.verifierSelectionCount] = swap1;
             emit VerifierChosen(requestId, request.verifiers[request.verifierSelectionCount], request.layerComputeIndex, request.verifierSelectionCount);
-            verifiersChosen[requestId][request.roundIndex][swap1] = true;
+            roundDetails[requestId][request.roundIndex].verifiersChosen[swap1] = true;
         } else {
             if(request.verifierSelectionCount == request.numVerifiersSampleSize) {
                 startRound(requestId); 
@@ -400,14 +393,13 @@ contract ComputationMarket {
         bytes32 computedHash
     ) external {
         Request storage request = requests[requestId];
+        Verification storage verification = verifications[requestId][request.roundIndex][msg.sender];
+
         require(request.state == RequestStates.COMMITMENT_STATE, "Request not yet in commitment state");
         require(block.timestamp <= roundDetails[requestId][request.roundIndex].commitEndTime, "Commitment phase ended");
-        //require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
-        require(verifiersChosen[requestId][request.roundIndex][msg.sender], "You are not the chosen verifier");
+        require(roundDetails[requestId][request.roundIndex].verifiersChosen[msg.sender], "You are not the chosen verifier in this round");
 
-        Verification storage verification = verifications[requestId][request.roundIndex][msg.sender];
         verification.computedHash = computedHash;
-        verification.revealed = false; // we set it to false, since we might come back to this again for a different round
 
         emit CommitmentSubmitted(requestId, msg.sender);
     }
@@ -439,7 +431,7 @@ contract ComputationMarket {
         require(block.timestamp > roundDetails[requestId][request.roundIndex].providerRevealEndTime, "Provider reveal phase not ended");
         require(block.timestamp <= roundDetails[requestId][request.roundIndex].commitmentRevealEndTime, "Reveal phase ended");
         //require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
-        require(verifiersChosen[requestId][request.roundIndex][msg.sender], "You are not the chosen verifier");
+        require(roundDetails[requestId][request.roundIndex].verifiersChosen[msg.sender], "You are not the chosen verifier");
 
         Verification storage verification = verifications[requestId][request.roundIndex][msg.sender];
         require(!verification.revealed, "Commitment already revealed");
@@ -473,7 +465,7 @@ contract ComputationMarket {
         Request storage request = requests[requestId];
 
         require(block.timestamp >= roundDetails[requestId][roundNum].commitmentRevealEndTime, "commitment stage has not yet completed");
-        require(verifiersChosen[requestId][roundNum][msg.sender], "You are not the chosen verifier");
+        require(roundDetails[requestId][roundNum].verifiersChosen[msg.sender], "You are not the chosen verifier in this round");
         require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "You have already been paid for verification");
 
         bytes32 majorityVoteHashForRound = roundDetails[requestId][roundNum].majorityVoteHash;

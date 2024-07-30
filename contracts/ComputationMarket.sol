@@ -214,7 +214,6 @@ contract ComputationMarket {
             paymentPerRoundForVerifiers: paymentPerRoundForVerifiers,
             totalPaidForVerification: 0,
             protocolVersion: protocolVersion,
-            //majorityVoteHash: bytes32(0),
             verifierSelectionCount: 0
         });
         requestCount++;
@@ -227,12 +226,8 @@ contract ComputationMarket {
         return requests[requestId];
     }
 
-    function getRandomNumbers(uint256 maxLimit, uint256 count) private view returns (uint256[] memory) {
-        uint256[] memory randomNumbers = new uint256[](count);
-        for (uint256 i = 0; i < count; i++) {
-            randomNumbers[i] = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender, i))) % maxLimit;
-        }
-        return randomNumbers;
+    function getRandomNumber(uint256 maxLimit) private view returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender))) % maxLimit;
     }
 
     // Function to withdraw funds/cancel request in case of an error or cancellation. 
@@ -355,7 +350,7 @@ contract ComputationMarket {
         verifierTriggered[requestId][request.roundIndex][msg.sender] = true;
 
         if(request.verifierSelectionCount < request.numVerifiersSampleSize) {
-            uint256 randNum = getRandomNumbers(request.numVerifiers-1 - request.verifierSelectionCount, 1)[0] + request.verifierSelectionCount;
+            uint256 randNum = getRandomNumber(request.numVerifiers-1 - request.verifierSelectionCount) + request.verifierSelectionCount;
 
             address swap1 = request.verifiers[randNum];
             address swap2 = request.verifiers[request.verifierSelectionCount];

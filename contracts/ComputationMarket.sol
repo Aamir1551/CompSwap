@@ -44,9 +44,10 @@ contract ComputationMarket {
         uint256 paymentPerRoundForVerifiers; // Amount the consumer will pay for verification
         uint256 totalPaidForVerification; // Running total of amount paid to verifiers
         uint256 protocolVersion; // Version of the protocol we are following
-        bytes32 majorityVoteHash;
+        //bytes32 majorityVoteHash;
         uint256 majorityCount;
         bool existMajority;
+        uint256 verifierSelectionCount;
     }
 
     // Structure representing a verification
@@ -57,6 +58,7 @@ contract ComputationMarket {
         bytes32 nonce; // Nonce used in the commitment
         bool revealed; // Indicates if the verifier has revealed their commitment
         bytes32 computedHash; // Hash of the commitment
+        bytes32 voteHash; // Hash of the vote
     }
 
     uint256 public requestCount; // Total number of requests created
@@ -75,6 +77,21 @@ contract ComputationMarket {
     // State variable to store vote addresses for each request and for each round. (requestId, voteHash, roundNum) => addresses of those that voted
     mapping(uint256 => mapping(bytes32 => mapping(uint256 => address[]))) private voteAddresses;
 
+    // Mapping of request Id and round number to whether the verifier has triggered for verification
+    mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifierTriggered;
+
+    // Mapping of request Id and round number to check whether the verifier has already applied to become a verifier
+    mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifierApplied;
+
+    // Mapping of request Id and round number to check whether the verifier has been chosen for that round
+    mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifiersChosen;
+
+    // Mapping of request Id and round number to check whether the verifier has not been chosen for that round
+    mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifiersUnchosen;
+
+    // Mapping of request Id and round number to the majority vote of that round 
+    mapping(uint256 => mapping(uint256 => bytes32)) private majorityVotes;
+
     // Event emitted when a new request is created
     event RequestCreated(uint256 indexed requestId, address indexed consumer);
     
@@ -82,7 +99,10 @@ contract ComputationMarket {
     event ProviderSelected(uint256 indexed requestId, address indexed provider);
     
     // Event emitted when a verifier is chosen
-    event VerifierChosen(uint256 indexed requestId, address indexed verifier, uint256 indexed layerComputeIndex);
+    event VerifierChosen(uint256 indexed requestId, address indexed verifier, uint256 indexed layerComputeIndex, uint256 verifierIndex);
+
+    // Event emitted when a verifier is not chosen
+    event VerifierUnchosen(uint256 indexed requestId, address indexed verifier, uint256 indexed layerComputeIndex, uint256 verifierIndex);
 
     // Event emitted when a commitment is submitted
     event CommitmentSubmitted(uint256 indexed requestId, address indexed verifier);
@@ -128,6 +148,9 @@ contract ComputationMarket {
 
     // Event emmited when verifiers disagree with the provider
     event ProviderResultUnsuccessful(uint256 indexed requestId);
+
+    // Event emitted when we have enough verifiers for the next round to start the selection of verifiers 
+    event VerificationSelectionStarted(uint256 indexed requestId, uint256 layerComputeIndex);
 
     constructor(address compTokenAddress) {
         require(compTokenAddress != address(0), "Invalid token address");
@@ -196,9 +219,10 @@ contract ComputationMarket {
             paymentPerRoundForVerifiers: paymentPerRoundForVerifiers,
             totalPaidForVerification: 0,
             protocolVersion: protocolVersion,
-            majorityVoteHash: bytes32(0),
+            //majorityVoteHash: bytes32(0),
             majorityCount: 0,
-            existMajority: true
+            existMajority: true,
+            verifierSelectionCount: 0
         });
         requestCount++;
 
@@ -289,6 +313,7 @@ contract ComputationMarket {
         request.majorityCount = 0;
         request.existMajority = true;
         request.roundIndex += 1;
+        request.verifierSelectionCount = 0;
 
         emit RoundInitialised(requestId);
         emit RoundStartedForVerificationSelection(requestId, request.layerComputeIndex);
@@ -313,13 +338,16 @@ contract ComputationMarket {
             verificationDeadlinePassedForVeryfying(requestId);
             return;
         }
-        require(!isVerifierApplied(requestId, msg.sender), "Verifier already applied");
+        //require(!isVerifierApplied(requestId, msg.sender), "Verifier already applied");
+        require(!verifierApplied[requestId][request.roundIndex][msg.sender], "Verifier already applied");
+        verifierApplied[requestId][request.roundIndex][msg.sender] = true;
 
         request.verifiers.push(msg.sender);
         emit VerificationApplied(requestId, msg.sender, request.layerComputeIndex);
 
         if (request.verifiers.length == request.numVerifiers) {
-            chooseVerifiersForRequest(requestId);
+            emit VerificationSelectionStarted(requestId, request.layerComputeIndex);
+            //chooseVerifiersForRequest(requestId);
         }
     }
 
@@ -337,7 +365,7 @@ contract ComputationMarket {
     }
 
     // Helper function to check if a verifier has already applied
-    function isVerifierApplied(uint256 requestId, address verifier) internal view returns (bool) {
+    /*function isVerifierApplied(uint256 requestId, address verifier) internal view returns (bool) {
         Request storage request = requests[requestId];
         for (uint256 i = 0; i < request.verifiers.length; i++) {
             if (request.verifiers[i] == verifier) {
@@ -345,9 +373,52 @@ contract ComputationMarket {
             }
         }
         return false;
+    }*/
+
+    // A verifier can only participate if they performed this trigger
+    // Function to choose verifiers for the next round
+    function chooseVerifiersForRequestTrigger(uint256 requestId) external {
+        Request storage request = requests[requestId];
+        require(request.hasBeenComputed, "Request has not been computed yet");
+        require(request.verifiers.length >= request.numVerifiersSampleSize, "Not enough verifiers to choose from");
+        if (request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification)) {
+            verificationDeadlinePassedForVeryfying(requestId);
+            return;
+        }
+
+        require(!verifierTriggered[requestId][request.roundIndex][msg.sender], "Verifier has already triggered");
+        verifierTriggered[requestId][request.roundIndex][msg.sender] = true;
+
+        if(request.verifierSelectionCount < request.numVerifiersSampleSize) {
+            uint256 randNum = getRandomNumbers(request.numVerifiers-1 - request.verifierSelectionCount, 1)[0] + request.verifierSelectionCount;
+
+            address swap1 = request.verifiers[randNum];
+            address swap2 = request.verifiers[request.verifierSelectionCount];
+
+            request.verifiers[randNum] = swap2;
+            request.verifiers[request.verifierSelectionCount] = swap1;
+            emit VerifierChosen(requestId, request.verifiers[request.verifierSelectionCount], request.layerComputeIndex, request.verifierSelectionCount);
+            verifiersChosen[requestId][request.roundIndex][swap1] = true;
+        } else {
+            if(request.verifierSelectionCount == request.numVerifiersSampleSize) {
+                startRound(requestId); 
+            }
+            emit VerifierUnchosen(requestId, request.verifiers[request.verifierSelectionCount], request.layerComputeIndex, request.verifierSelectionCount);
+            compToken.transfer(request.verifiers[request.verifierSelectionCount], request.paymentPerRoundForVerifiers);
+            verifiersUnchosen[requestId][request.roundIndex][request.verifiers[request.verifierSelectionCount]] = true;
+        }
+        request.verifierSelectionCount += 1;
     }
 
-   function chooseVerifiersForRequest(uint256 requestId) internal {
+    // Function to return stake for verifiers not chosen to participate in the next round
+    function returnStake(uint256 requestId) external {
+        Request storage request = requests[requestId];
+        require(verifiersUnchosen[requestId][request.roundIndex][msg.sender], "Either stake has already been returned, or not the correct verifier");
+        compToken.transfer(request.verifiers[verifierIndex], request.paymentPerRoundForVerifiers); 
+        verifiersUnchosen[requestId][request.roundIndex][msg.sender] = false;
+    }
+
+    /*function chooseVerifiersForRequest(uint256 requestId) internal {
         Request storage request = requests[requestId];
         require(request.hasBeenComputed, "Request has not been computed yet");
         require(request.verifiers.length >= request.numVerifiersSampleSize, "Not enough verifiers to choose from");
@@ -380,7 +451,7 @@ contract ComputationMarket {
         }
 
         startRound(requestId);
-    }
+    }*/
 
     // Function to start a round of verification
     function startRound(uint256 requestId) internal {
@@ -406,7 +477,8 @@ contract ComputationMarket {
         Request storage request = requests[requestId];
         require(request.state == RequestStates.COMMITMENT_STATE, "Request not yet in commitment state");
         require(block.timestamp <= request.commitEndTime, "Commitment phase ended");
-        require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
+        //require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
+        require(verifiersChosen[requestId][request.roundIndex][msg.sender], "You are not the chosen verifier");
 
         Verification storage verification = verifications[requestId][msg.sender];
         verification.computedHash = computedHash;
@@ -416,7 +488,7 @@ contract ComputationMarket {
     }
 
     // Helper function to check if a verifier is chosen
-    function isVerifierChosen(uint256 requestId, address verifier) internal view returns (bool) {
+    /*function isVerifierChosen(uint256 requestId, address verifier) internal view returns (bool) {
         Request storage request = requests[requestId];
         for (uint256 i = 0; i < request.chosenVerifiers.length; i++) {
             if (request.chosenVerifiers[i] == verifier) {
@@ -424,7 +496,7 @@ contract ComputationMarket {
             }
         }
         return false;
-    }
+    }*/
 
     // Function to reveal the provider's private key and hash of the answer
     // The answer hash is equal to: keccak256(abi.encode(agree, answer)), where agree is true
@@ -452,19 +524,22 @@ contract ComputationMarket {
         Request storage request = requests[requestId];
         require(block.timestamp > request.providerRevealEndTime, "Provider reveal phase not ended");
         require(block.timestamp <= request.commitmentRevealEndTime, "Reveal phase ended");
-        require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
+        //require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
+        require(verifiersChosen[requestId][request.roundIndex][msg.sender], "You are not the chosen verifier");
 
         Verification storage verification = verifications[requestId][msg.sender];
         require(!verification.revealed, "Commitment already revealed");
         require(keccak256(abi.encode(answer, nonce, msg.sender)) == verification.computedHash, "Invalid reveal values");
+
+        bytes32 voteHash = keccak256(abi.encode(verification.answer, verification.agree));
 
         verification.agree = agree;
         verification.answer = answer;
         verification.nonce = nonce;
         verification.revealed = true;
         verification.verifier = msg.sender;
+        verification.voteHash = keccak256(abi.encode(verification.answer, verification.agree));
 
-        bytes32 voteHash = keccak256(abi.encode(verification.answer, verification.agree));
         votes[requestId][voteHash][request.roundIndex]++;
         voteAddresses[requestId][voteHash][request.roundIndex].push(verification.verifier);
 

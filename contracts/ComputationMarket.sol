@@ -27,27 +27,19 @@ contract ComputationMarket {
         bool completed; // Indicates if the request is completed. If true, the request has reached the end of its lifecycle
         bool hasBeenComputed; // Indicates if the computation has been completed
         uint256 numVerifiersSampleSize; // Number of verifiers sampled for each round
-        address[] verifiers; // List of verifiers who applied
-        address[] chosenVerifiers; // List of verifiers chosen for the round
+        address[] verifiers; // List of verifiers who applied for the current round
+        address[] chosenVerifiers; // List of verifiers chosen for the current round
         address mainProvider; // The provider who accepted the request
         uint256 timeAllocatedForVerification; // Time allocated for each verification round
         uint256 layerCount; // Number of layers of operations
-        uint256 layerComputeIndex; // Current layer being computed
-        uint256 verificationStartTime; // Added to track when verification started
-        uint256 commitEndTime; // Added to track end time for commitment phase
-        uint256 commitmentRevealEndTime; // Added to track end time for reveal phase
-        uint256 providerRevealEndTime; // End time for provider to reveal their private key
-        uint256 roundIndex; // Sum of all rounds that are completed and retried
-        bytes32 mainProviderAnswerHash; // The answer hash of the main provider
+        uint256 layerComputeIndex; // Number of layers computed so far into the DAG
+        uint256 roundIndex; // Number of rounds we have performed so far
         RequestStates state; // The state of the current request
         uint256 stake; // Amount staked by the provider
         uint256 paymentPerRoundForVerifiers; // Amount the consumer will pay for verification
         uint256 totalPaidForVerification; // Running total of amount paid to verifiers
         uint256 protocolVersion; // Version of the protocol we are following
-        //bytes32 majorityVoteHash;
-        uint256 majorityCount;
-        bool existMajority;
-        uint256 verifierSelectionCount;
+        uint256 verifierSelectionCount; // Number of verifiers selected for the current round
     }
 
     // Structure representing a verification
@@ -59,6 +51,20 @@ contract ComputationMarket {
         bool revealed; // Indicates if the verifier has revealed their commitment
         bytes32 computedHash; // Hash of the commitment
         bytes32 voteHash; // Hash of the vote
+        bool verifierPaid;
+    }
+
+    struct RoundDetails {
+        mapping(bytes32 => uint256) votes; // Vote tally for the round. (voteHash => number of votes)
+        uint256 roundIndex; // Sum of all rounds that are completed and retried so far
+        uint256 layerComputeIndex; // The index into the DAG on which layer this round was operating on
+        uint256 verificationStartTime; // Added to track when verification started
+        uint256 commitEndTime; // Added to track end time for commitment phase
+        uint256 providerRevealEndTime; // End time for provider to reveal their private key
+        uint256 commitmentRevealEndTime; // Added to track end time for reveal phase
+        bytes32 majorityVoteHash; // Majority vote for the round
+        uint256 majorityCount; // Majority count for the majority vote for that round
+        bytes32 mainProviderAnswerHash; // The answer hash of the main provider
     }
 
     uint256 public requestCount; // Total number of requests created
@@ -68,14 +74,17 @@ contract ComputationMarket {
     // Mapping of request ID to Request struct
     mapping(uint256 => Request) public requests; 
 
-    // Mapping of request ID and verifier address to Verification struct
-    mapping(uint256 => mapping(address => Verification)) public verifications; 
+    // Mapping of request ID and round number to RoundDetails struct
+    mapping(uint256 => mapping(uint256 => RoundDetails)) public roundDetails;
+
+    // Mapping of request ID, round number and verifier address to Verification struct
+    mapping(uint256 => mapping(uint256 => mapping(address => Verification))) public verifications; 
 
     // State variable to store votes for each request and for each round. (requestId, voteHash, roundNum) => number of votes
-    mapping(uint256 => mapping(bytes32 => mapping(uint256 => uint256))) private votes;
+    //mapping(uint256 => mapping(bytes32 => mapping(uint256 => uint256))) private votes;
 
     // State variable to store vote addresses for each request and for each round. (requestId, voteHash, roundNum) => addresses of those that voted
-    mapping(uint256 => mapping(bytes32 => mapping(uint256 => address[]))) private voteAddresses;
+    // mapping(uint256 => mapping(bytes32 => mapping(uint256 => address[]))) private voteAddresses;
 
     // Mapping of request Id and round number to whether the verifier has triggered for verification
     mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifierTriggered;
@@ -88,9 +97,6 @@ contract ComputationMarket {
 
     // Mapping of request Id and round number to check whether the verifier has not been chosen for that round
     mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifiersUnchosen;
-
-    // Mapping of request Id and round number to the majority vote of that round 
-    mapping(uint256 => mapping(uint256 => bytes32)) private majorityVotes;
 
     // Event emitted when a new request is created
     event RequestCreated(uint256 indexed requestId, address indexed consumer);
@@ -196,8 +202,8 @@ contract ComputationMarket {
             inputFileURLs: inputFileURLs,
             outputFileURLs: new string[](0),
             operationFileURL: operationFileURL,
-            computationDeadline: block.timestamp + computationDeadline,
-            verificationDeadline: block.timestamp + verificationDeadline,
+            computationDeadline: computationDeadline,
+            verificationDeadline: verificationDeadline,
             totalPayment: totalPayment,
             completed: false,
             hasBeenComputed: false,
@@ -208,20 +214,13 @@ contract ComputationMarket {
             timeAllocatedForVerification: timeAllocatedForVerification,
             layerCount: layerCount,
             layerComputeIndex: 0,
-            verificationStartTime: 0,
-            commitEndTime: 0,
-            commitmentRevealEndTime: 0,
-            providerRevealEndTime: 0,
             roundIndex: 0,
-            mainProviderAnswerHash: 0,
             state: RequestStates.NO_PROVIDER_SELECTED,
             stake: (paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100,
             paymentPerRoundForVerifiers: paymentPerRoundForVerifiers,
             totalPaidForVerification: 0,
             protocolVersion: protocolVersion,
             //majorityVoteHash: bytes32(0),
-            majorityCount: 0,
-            existMajority: true,
             verifierSelectionCount: 0
         });
         requestCount++;
@@ -232,11 +231,6 @@ contract ComputationMarket {
     // Function to get request details
     function getRequestDetails(uint256 requestId) external view returns (Request memory) {
         return requests[requestId];
-    }
-
-    // Function to get verification details
-    function getVerificationDetails(uint256 requestId, address verifier) external view returns (Verification memory) {
-        return verifications[requestId][verifier];
     }
 
     function getRandomNumbers(uint256 maxLimit, uint256 count) private view returns (uint256[] memory) {
@@ -309,9 +303,6 @@ contract ComputationMarket {
         request.chosenVerifiers = new address[](0);
         request.state = RequestStates.CHOOSING_VERIFIERS;
 
-        request.majorityVoteHash = bytes32(0);
-        request.majorityCount = 0;
-        request.existMajority = true;
         request.roundIndex += 1;
         request.verifierSelectionCount = 0;
 
@@ -352,16 +343,13 @@ contract ComputationMarket {
     }
 
     // function called when verification deadline has passed and we do not have enough verifiers for the round to start
-    function verificationDeadlinePassedForVeryfying(uint256 requestId) public {
+    function verificationDeadlinePassedForVeryfying(uint256 requestId, uint256 roundIndex) public {
         Request storage request = requests[requestId];
-        require(request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification), "Verification deadline has not yet passed");
-        require(request.state == RequestStates.CHOOSING_VERIFIERS, "Request must be in choosing verifiers state");
-        for(uint i=0; i<request.verifiers.length; i++) {
-            address verifier = request.verifiers[request.verifiers.length - 1];
-            request.verifiers.pop();
-            compToken.transfer(verifier, request.paymentPerRoundForVerifiers);
-        }
-        providerSuccess(requestId);
+        require(roundDetails[requestId][request.roundIndex].verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification), "Verification deadline has not yet passed");
+        require(verifierApplied[requestId][request.roundIndex][msg.sender], "Verifier has either already recieved stake, or did not apply for verification");
+
+        verifierApplied[requestId][request.roundIndex][msg.sender] = false;
+        compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
     }
 
     // Helper function to check if a verifier has already applied
@@ -381,7 +369,7 @@ contract ComputationMarket {
         Request storage request = requests[requestId];
         require(request.hasBeenComputed, "Request has not been computed yet");
         require(request.verifiers.length >= request.numVerifiersSampleSize, "Not enough verifiers to choose from");
-        if (request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification)) {
+        if (RoundDetails[requestId][request.roundIndex].verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification)) {
             verificationDeadlinePassedForVeryfying(requestId);
             return;
         }
@@ -457,12 +445,12 @@ contract ComputationMarket {
     function startRound(uint256 requestId) internal {
         Request storage request = requests[requestId];
         require(request.layerComputeIndex < request.layerCount, "All layers have been processed");
-        require(request.verificationDeadline > block.timestamp + (3 * request.timeAllocatedForVerification), "Verification Deadline has passed to start a round");
+        require(roundDetails[requestId][request.roundIndex].verificationDeadline > block.timestamp + (3 * request.timeAllocatedForVerification), "Verification Deadline has passed to start a round");
 
-        request.verificationStartTime = block.timestamp;
-        request.commitEndTime = block.timestamp + request.timeAllocatedForVerification;
-        request.providerRevealEndTime = request.commitEndTime + request.timeAllocatedForVerification;
-        request.commitmentRevealEndTime = request.providerRevealEndTime + request.timeAllocatedForVerification;
+        roundDetails[requestId][request.roundIndex].verificationStartTime = block.timestamp;
+        roundDetails[requestId][request.roundIndex].commitEndTime = block.timestamp + request.timeAllocatedForVerification;
+        roundDetails[requestId][request.roundIndex].providerRevealEndTime = roundDetails[requestId][request.roundIndex].commitEndTime + request.timeAllocatedForVerification;
+        roundDetails[requestId][request.roundIndex].commitmentRevealEndTime = roundDetails[requestId][request.roundIndex].providerRevealEndTime + request.timeAllocatedForVerification;
 
         emit CommitmentPhaseStarted(requestId, block.timestamp, request.commitEndTime, request.layerComputeIndex);
         request.state = RequestStates.COMMITMENT_STATE;
@@ -476,11 +464,11 @@ contract ComputationMarket {
     ) external {
         Request storage request = requests[requestId];
         require(request.state == RequestStates.COMMITMENT_STATE, "Request not yet in commitment state");
-        require(block.timestamp <= request.commitEndTime, "Commitment phase ended");
+        require(block.timestamp <= roundDetails[requestId][request.roundIndex].commitEndTime, "Commitment phase ended");
         //require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
         require(verifiersChosen[requestId][request.roundIndex][msg.sender], "You are not the chosen verifier");
 
-        Verification storage verification = verifications[requestId][msg.sender];
+        Verification storage verification = verifications[requestId][request.roundIndex][msg.sender];
         verification.computedHash = computedHash;
         verification.revealed = false; // we set it to false, since we might come back to this again for a different round
 
@@ -507,9 +495,9 @@ contract ComputationMarket {
     ) external {
         Request storage request = requests[requestId];
         require(msg.sender == request.mainProvider, "Only the main provider can reveal the key and hash");
-        require(block.timestamp > request.commitEndTime, "Commitment phase not ended");
-        require(block.timestamp <= request.providerRevealEndTime, "Provider reveal phase ended");
-        request.mainProviderAnswerHash = keccak256(abi.encode(answerHash, true));
+        require(block.timestamp > roundDetails[requestId][request.roundIndex].commitEndTime, "Commitment phase not ended");
+        require(block.timestamp <= roundDetails[requestId][request.roundIndex].providerRevealEndTime, "Provider reveal phase ended");
+        roundDetails[requestId][request.roundIndex].mainProviderAnswerHash = keccak256(abi.encode(answerHash, true));
 
         request.state = RequestStates.PROVIDER_REVEAL_STATE;
         emit ProviderRevealed(requestId, privateKey, answerHash);
@@ -522,12 +510,12 @@ contract ComputationMarket {
         bytes32 nonce
     ) external {
         Request storage request = requests[requestId];
-        require(block.timestamp > request.providerRevealEndTime, "Provider reveal phase not ended");
-        require(block.timestamp <= request.commitmentRevealEndTime, "Reveal phase ended");
+        require(block.timestamp > roundDetails[requestId][request.roundIndex].providerRevealEndTime, "Provider reveal phase not ended");
+        require(block.timestamp <= roundDetails[requestId][request.roundIndex].commitmentRevealEndTime, "Reveal phase ended");
         //require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
         require(verifiersChosen[requestId][request.roundIndex][msg.sender], "You are not the chosen verifier");
 
-        Verification storage verification = verifications[requestId][msg.sender];
+        Verification storage verification = verifications[requestId][request.roundIndex][msg.sender];
         require(!verification.revealed, "Commitment already revealed");
         require(keccak256(abi.encode(answer, nonce, msg.sender)) == verification.computedHash, "Invalid reveal values");
 
@@ -540,45 +528,50 @@ contract ComputationMarket {
         verification.verifier = msg.sender;
         verification.voteHash = keccak256(abi.encode(verification.answer, verification.agree));
 
-        votes[requestId][voteHash][request.roundIndex]++;
-        voteAddresses[requestId][voteHash][request.roundIndex].push(verification.verifier);
+        RoundDetails storage round = roundDetails[requestId][request.roundIndex];
 
-        if (votes[requestId][voteHash][request.roundIndex] == request.majorityCount) {
-            request.existMajority = false;
-        } else if (votes[requestId][voteHash][request.roundIndex] > request.majorityCount) {
-            request.existMajority = true;
-            request.majorityCount = votes[requestId][voteHash][request.roundIndex];
-            request.majorityVoteHash = voteHash;
+        round.votes[voteHash]++;
+
+        if (round.votes[voteHash] == round.majorityCount) {
+            roundDetails[requestId][request.roundIndex].majorityVoteHash = bytes32(0);
+        } else if (round.votes[voteHash] > round.majorityCount) {
+            majorityVoteHash[requestId][request.roundIndex] = voteHash;
         }
 
         request.state = RequestStates.COMMITMENT_REVEAL_STATE;
         emit RevealVerificationDetails(requestId, block.timestamp, msg.sender);
     }
 
-    // Function to calculate the majority vote and distribute rewards
-    function calculateMajorityAndReward(uint256 requestId) public {
+    // Function to calculate the majority vote and extract reward if msg.sender vote agreed with majority of the voters
+    function calculateMajorityAndReward(uint256 requestId, uint256 roundNum) public {
         Request storage request = requests[requestId];
 
-        require(block.timestamp >= request.commitmentRevealEndTime, "commitment stage has not yet completed");
-        require(request.state == RequestStates.COMMITMENT_REVEAL_STATE, "Request not in correct state for calculating rewards");
+        require(block.timestamp >= roundDetails[requestId][roundNum].commitmentRevealEndTime, "commitment stage has not yet completed");
+        //require(request.state == RequestStates.COMMITMENT_REVEAL_STATE, "Request not in correct state for calculating rewards");
 
-        
-        if (request.existMajority) {
-            bool success = distributeRewardsAndStakes(requestId, request.majorityVoteHash);
-            finalizeVerification(requestId, success);
-        } else {
-            handleNoMajority(requestId);
+        bytes32 majorityVoteHashForRound = roundDetails[requestId][roundNum].majorityVoteHash;
+        if (majorityVoteHashForRound == verifications[requestId][roundNum][msg.sender].voteHash) {
+            uint256 reward = request.paymentPerRoundForVerifiers * request.numVerifiersSampleSize / RoundDetails.votes[majorityVoteHashForRound];
+            uint256 stake = request.paymentPerRoundForVerifiers;
+            request.totalPaidForVerification += reward;
+            compToken.transfer(msg.sender, reward + stake);
         }
+        // make sure this is correct
+        if(roundNum == request.roundIndex) {
+            finalizeVerification(requestId, success);
+        }
+
     }
 
     // Function to handle the case when a majority cannot be determined
-    function handleNoMajority(uint256 requestId) internal {
+    function handleNoMajority(uint256 requestId, uint256 roundNum) public {
         Request storage request = requests[requestId];
-        for (uint256 i = 0; i < request.chosenVerifiers.length; i++) {
-            compToken.transfer(request.chosenVerifiers[i], request.paymentPerRoundForVerifiers);
+        require(verifiersChosen[requestId][roundNum][msg.sender], "You are not the chosen verifier");
+        require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "You have already been paid for verification");
+        compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
+        if (request.roundIndex < roundNum) {
+            initialiseRound(requestId);
         }
-        emit NoMajorityForRound(requestId, request.layerComputeIndex);
-        initialiseRound(requestId);
     }
 
 
@@ -608,22 +601,22 @@ contract ComputationMarket {
             initialiseRound(requestId);
           } else {
             request.layerComputeIndex++;
-            providerSuccess(requestId);
           }
         } else {
             providerFailure(requestId);
         }
     }
 
-    function providerSuccess(uint256 requestId) internal {
+    /*function providerSuccess(uint256 requestId) internal {
         Request storage request = requests[requestId];
         request.completed = true;
         compToken.transfer(request.mainProvider, request.stake + request.paymentForProvider);
         request.state = RequestStates.SUCCESS;
         emit ProviderResultSuccessfullyVerified(requestId);
-    }
+    }*/
 
-    function providerEarlySuccessCall(uint256 requestId) public {
+    // Provider calls this function, once the verification deadline has passed, and all rounds currently peformed agreed with the main provider
+    function providerSuccessCall(uint256 requestId) public {
         Request storage request = requests[requestId];
         require(block.timestamp >= request.verificationDeadline && request.completed && request.state != RequestStates.UNSUCCESSFUL && !request.completed);
         request.completed = true;

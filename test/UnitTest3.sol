@@ -517,5 +517,4 @@ contract ComputationMarketTest is Test {
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));
     }
-}
-*/
+}*/

@@ -122,6 +122,8 @@ contract ComputationMarketTest is Test {
         vm.startPrank(provider);
         string[] memory outputFileURLs = new string[](1);
         outputFileURLs[0] = "output_file_url";
+        market.alertVerifiersOfCompletedRequest(0);
+        vm.warp(block.timestamp + 3);
         market.completeRequest(0, outputFileURLs);
         vm.stopPrank();
     }
@@ -158,7 +160,7 @@ contract ComputationMarketTest is Test {
         }
     }
 
-    function performRoundWithVerifiers(address[] memory verifiers, bytes32[] memory answers, bool[] memory agreements, bool majorityExpected) internal {
+    function performRoundWithVerifiers(address[] memory verifiers, bytes32[] memory answers, bool[] memory agreements, bool majorityExpected, uint256 roundNum) internal {
         // Apply for verification
         for (uint256 i = 0; i < verifiers.length; i++) {
             applyForVerification(verifiers[i]);
@@ -176,7 +178,7 @@ contract ComputationMarketTest is Test {
         // Submit commitment for the chosen verifiers
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
             uint256 verifierIndex = findVerifierIndex(chosenVerifiers[i], verifiers);
-            bytes32 computedHash = keccak256(abi.encode(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
+            bytes32 computedHash = keccak256(abi.encodePacked(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
             submitCommitment(chosenVerifiers[i], computedHash);
         }
 
@@ -199,7 +201,7 @@ contract ComputationMarketTest is Test {
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
         //market.calculateMajorityAndReward(0);
-        allVerifiersCollectRewards(0, 1);
+        allVerifiersCollectRewards(0, roundNum);
         vm.stopPrank();
 
         ComputationMarket.Request memory requestUpdated = market.getRequestDetails(0);
@@ -248,7 +250,7 @@ contract ComputationMarketTest is Test {
         agreements[2] = false;
         agreements[3] = true;
         agreements[4] = true;
-        performRoundWithVerifiers(verifiers, answers, agreements, true);
+        performRoundWithVerifiers(verifiers, answers, agreements, true, 1);
 
         // Round 2
         answers[0] = keccak256(abi.encodePacked("answer"));
@@ -261,7 +263,7 @@ contract ComputationMarketTest is Test {
         agreements[2] = false;
         agreements[3] = true;
         agreements[4] = true;
-        performRoundWithVerifiers(verifiers, answers, agreements, true);
+        performRoundWithVerifiers(verifiers, answers, agreements, true, 2);
 
         // Round 3
         answers[0] = keccak256(abi.encodePacked("answer"));
@@ -274,7 +276,7 @@ contract ComputationMarketTest is Test {
         agreements[2] = false;
         agreements[3] = true;
         agreements[4] = true;
-        performRoundWithVerifiers(verifiers, answers, agreements, true);
+        performRoundWithVerifiers(verifiers, answers, agreements, true, 3);
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.SUCCESS));
@@ -311,7 +313,7 @@ contract ComputationMarketTest is Test {
         agreements[2] = false;
         agreements[3] = true;
         agreements[4] = true;
-        performRoundWithVerifiers(verifiers, answers, agreements, true);
+        performRoundWithVerifiers(verifiers, answers, agreements, true, 1);
 
         // Fetch the chosen verifiers from the request structure
         ComputationMarket.Request memory request = market.getRequestDetails(0);
@@ -338,7 +340,7 @@ contract ComputationMarketTest is Test {
         agreements[2] = false;
         agreements[3] = true;
         agreements[4] = true;
-        performRoundWithVerifiers(verifiers, answers, agreements, true);
+        performRoundWithVerifiers(verifiers, answers, agreements, true, 2);
 
         // Round 3
         answers[0] = keccak256(abi.encodePacked("answer"));
@@ -351,7 +353,7 @@ contract ComputationMarketTest is Test {
         agreements[2] = false;
         agreements[3] = true;
         agreements[4] = true;
-        performRoundWithVerifiers(verifiers, answers, agreements, true);
+        performRoundWithVerifiers(verifiers, answers, agreements, true, 3);
 
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.SUCCESS));
@@ -415,7 +417,7 @@ contract ComputationMarketTest is Test {
 
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
             uint256 verifierIndex = findVerifierIndex(chosenVerifiers[i], verifiers);
-            bytes32 computedHash = keccak256(abi.encode(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
+            bytes32 computedHash = keccak256(abi.encodePacked(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
             submitCommitment(chosenVerifiers[i], computedHash);
         }
 
@@ -472,12 +474,16 @@ contract ComputationMarketTest is Test {
             applyForVerification(verifiers[i]);
         }
 
+        for (uint256 i = 0; i < verifiers.length; i++) {
+            triggerVerification(verifiers[i]);
+        }
+
         ComputationMarket.Request memory request = market.getRequestDetails(0);
         address[] memory chosenVerifiers = request.chosenVerifiers;
 
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
             uint256 verifierIndex = findVerifierIndex(chosenVerifiers[i], verifiers);
-            bytes32 computedHash = keccak256(abi.encode(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
+            bytes32 computedHash = keccak256(abi.encodePacked(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
             submitCommitment(chosenVerifiers[i], computedHash);
         }
 

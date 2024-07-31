@@ -1,6 +1,6 @@
 // TODO:
 // need a way for verifiers to extract stake when not everyone has triggered, and we ran out of time
-// have a function to trigger the next round if verifiers aren't collecting rewards
+// do it such that, you can only apply for verification after 2 seconds
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
@@ -45,6 +45,7 @@ contract ComputationMarket {
         uint256 totalPaidForVerification; // Running total of amount paid to verifiers
         uint256 protocolVersion; // Version of the protocol we are following
         uint256 verifierSelectionCount; // Number of verifiers selected for the current round
+        uint256 computedTimeByProvider; // Time when the provider computed the request
     }
 
     // Structure representing a verification
@@ -88,7 +89,6 @@ contract ComputationMarket {
         uint256 majorityCount;
         bytes32 mainProviderAnswerHash;
     }
-
 
     uint256 public requestCount; // Total number of requests created
     uint256 public constant PROVIDER_STAKE_PERCENTAGE = 10; // Percentage of payment provider needs to stake
@@ -228,7 +228,8 @@ contract ComputationMarket {
             paymentPerRoundForVerifiers: paymentPerRoundForVerifiers,
             totalPaidForVerification: 0,
             protocolVersion: protocolVersion,
-            verifierSelectionCount: 0
+            verifierSelectionCount: 0,
+            computedTimeByProvider: 0 
         });
         requestCount++;
 
@@ -306,12 +307,22 @@ contract ComputationMarket {
     // Function to mark a request as completed by the provider
     function completeRequest(uint256 requestId, string[] memory outputFileURLs) external {
         Request storage request = requests[requestId];
+        require(block.timestamp >= request.computedTimeByProvider + 2, "Must wait 2 seconds before request can be marked as completed");
         require(block.timestamp <= request.computationDeadline, "Computation deadline passed");
         require(request.mainProvider == msg.sender, "Only chosen provider can complete request");
         request.hasBeenComputed = true;
         request.outputFileURLs = outputFileURLs;
-        emit RequestCompleted(requestId, msg.sender);
+        request.computedTimeByProvider = block.timestamp;
         initialiseRound(requestId);
+    }
+
+    // Function to alert verifiers of a completed request, and to stop the provider from creating fake addresses to verify
+    function alertVerifiersOfCompletedRequest(uint256 requestId) external {
+        emit RequestCompleted(requestId, msg.sender);
+
+        Request storage request = requests[requestId];
+        require(!request.completed, "Request has already been completed");
+        request.computedTimeByProvider = block.timestamp;
     }
 
     // Function to initialise a round, and empty all verifiers/chosen verifier lists 
@@ -401,6 +412,23 @@ contract ComputationMarket {
         request.verifierSelectionCount += 1;
         if(request.verifierSelectionCount == request.numVerifiersSampleSize) {
             startRound(requestId);
+        }
+    }
+
+    // Function to return stake for verifiers if we do not have enough time to perform the next round 
+    function returnStakeDueToTimeout(uint256 requestId) external {
+        Request storage request = requests[requestId];
+
+        require(roundDetails[requestId][request.roundIndex].verifiersApplied[msg.sender], "You are not the verifier for this round");
+        require(request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification), "Still enough time to perform round before verification deadline");
+        require(request.state == ComputationMarket.RequestStates.CHOOSING_VERIFIERS, "Request Must be in choosing verifiers state");
+
+        // This is to stop the unchosen verifiers from requesting their stake again using the returnStake function
+        if(verifiersUnchosen[requestId][request.roundIndex][msg.sender]) {
+            compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
+            verifiersUnchosen[requestId][request.roundIndex][msg.sender] = false;
+        } else {
+            compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
         }
     }
 

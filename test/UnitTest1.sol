@@ -115,6 +115,8 @@ contract ComputationMarketTest is Test {
         vm.startPrank(provider);
         string[] memory outputFileURLs = new string[](1);
         outputFileURLs[0] = "output_file_url";
+        market.alertVerifiersOfCompletedRequest(0);
+        vm.warp(block.timestamp + 3);
         market.completeRequest(0, outputFileURLs);
         vm.stopPrank();
     }

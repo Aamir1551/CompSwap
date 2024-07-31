@@ -100,6 +100,12 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
     }
 
+    function triggerVerification(address verifierAddress) internal {
+        vm.startPrank(verifierAddress);
+        market.chooseVerifiersForRequestTrigger(0);
+        vm.stopPrank();
+    }
+
     function selectTestRequest() internal {
         createTestRequest();
 
@@ -139,10 +145,28 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
     }
 
+    function collectRewards(address verifierAddress, uint256 requestId, uint256 roundNum) internal {
+        vm.startPrank(verifierAddress);
+        market.calculateMajorityAndReward(requestId, roundNum);
+        vm.stopPrank();
+    }
+
+    function allVerifiersCollectRewards(uint256 requestId, uint256 roundNum) internal {
+        ComputationMarket.Request memory request = market.getRequestDetails(requestId);
+        for(uint256 i = 0; i < request.numVerifiersSampleSize; i++) {
+            collectRewards(request.chosenVerifiers[i], requestId, roundNum);
+        }
+    }
+
     function performRoundWithVerifiers(address[] memory verifiers, bytes32[] memory answers, bool[] memory agreements, bool majorityExpected) internal {
         // Apply for verification
         for (uint256 i = 0; i < verifiers.length; i++) {
             applyForVerification(verifiers[i]);
+        }
+
+        // Trigger verification
+        for (uint256 i = 0; i < verifiers.length; i++) {
+            triggerVerification(verifiers[i]);
         }
 
         // Fetch the chosen verifiers from the request structure
@@ -174,7 +198,8 @@ contract ComputationMarketTest is Test {
         }
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        market.calculateMajorityAndReward(0);
+        //market.calculateMajorityAndReward(0);
+        allVerifiersCollectRewards(0, 1);
         vm.stopPrank();
 
         ComputationMarket.Request memory requestUpdated = market.getRequestDetails(0);
@@ -382,6 +407,9 @@ contract ComputationMarketTest is Test {
             applyForVerification(verifiers[i]);
         }
 
+        for (uint256 i = 0; i < verifiers.length; i++) {
+            triggerVerification(verifiers[i]);
+        }
         ComputationMarket.Request memory request = market.getRequestDetails(0);
         address[] memory chosenVerifiers = request.chosenVerifiers;
 
@@ -408,7 +436,8 @@ contract ComputationMarketTest is Test {
         }
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        market.calculateMajorityAndReward(0);
+        //market.calculateMajorityAndReward(0);
+        allVerifiersCollectRewards(0, 1);
 
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS));
@@ -466,7 +495,8 @@ contract ComputationMarketTest is Test {
         }
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        market.calculateMajorityAndReward(0);
+        //market.calculateMajorityAndReward(0);
+        allVerifiersCollectRewards(0, 1);
 
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));

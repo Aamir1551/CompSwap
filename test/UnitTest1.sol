@@ -2,9 +2,15 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import "forge-std/console.sol";
 import "../contracts/ComputationMarket.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
+// TODO
+// 1. isn't it meant to be 2000 operations represent 1 layer? -- looks like we did 1000 even in our code, in this case, we will
+// update our protocol to 1000
+// 2. Only give users as much money as required, and not more
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("Mock COMP Token", "COMP") {
@@ -22,8 +28,8 @@ contract ComputationMarketTest is Test {
     address verifier2 = address(4);
     address verifier3 = address(5);
 
-    uint256 paymentForProvider = 1000 * 10 ** 18;
-    uint256 paymentPerRoundForVerifiers = 500 * 10 ** 18;
+    uint256 paymentForProvider = 20;
+    uint256 paymentPerRoundForVerifiers = 5;
     uint256 totalPaymentForVerifiers;
     uint256 numOperations = 3000;
     uint256 numVerifiers = 3;
@@ -50,11 +56,11 @@ contract ComputationMarketTest is Test {
     }
 
     function distributeTokens() internal {
-        compToken.transfer(consumer, 1000000000000000000000000 * 10 ** compToken.decimals());
-        compToken.transfer(provider, 1000000000000000000000000 * 10 ** compToken.decimals());
-        compToken.transfer(verifier1, 1000000000000000000000000 * 10 ** compToken.decimals());
-        compToken.transfer(verifier2, 1000000000000000000000000 * 10 ** compToken.decimals());
-        compToken.transfer(verifier3, 1000000000000000000000000 * 10 ** compToken.decimals());
+        compToken.transfer(consumer, 1000);
+        compToken.transfer(provider, 1000);
+        compToken.transfer(verifier1, 1000);
+        compToken.transfer(verifier2, 1000);
+        compToken.transfer(verifier3, 1000);
     }
 
     function labelAccounts() internal {
@@ -120,6 +126,12 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
     }
 
+    function triggerVerification(address verifierAddress) internal {
+        vm.startPrank(verifierAddress);
+        market.chooseVerifiersForRequestTrigger(0);
+        vm.stopPrank();
+    }
+
     function submitCommitment(address verifierAddress, bytes32 computedHash) internal {
         vm.startPrank(verifierAddress);
         market.submitCommitment(0, computedHash);
@@ -132,14 +144,18 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
     }
 
-    function performSuccessfulRound(address v1, address v2, address v3) internal {
+    function performSuccessfulRound(address v1, address v2, address v3, uint256 roundNum) internal {
         applyForVerification(v1);
         applyForVerification(v2);
         applyForVerification(v3);
 
-        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), v1));
-        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), v2));
-        bytes32 computedHash3 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), v3));
+        triggerVerification(v1);
+        triggerVerification(v2);
+        triggerVerification(v3);
+
+        bytes32 computedHash1 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), v1));
+        bytes32 computedHash2 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), v2));
+        bytes32 computedHash3 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), v3));
 
         submitCommitment(v1, computedHash1);
         submitCommitment(v2, computedHash2);
@@ -166,20 +182,30 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        market.calculateMajorityAndReward(0);
+
+        getRewardsAndStakes(verifier1, roundNum);
+        getRewardsAndStakes(verifier2, roundNum);
+        getRewardsAndStakes(verifier3, roundNum);
+
+        vm.stopPrank();
+    }
+
+    function getRewardsAndStakes(address verifier, uint256 roundNum) internal {
+        vm.prank(verifier);
+        market.calculateMajorityAndReward(0, roundNum);
         vm.stopPrank();
     }
 
     function testMajorityAgreement() public {
         completeTestRequest();
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        performSuccessfulRound(verifier1, verifier2, verifier3);
+        performSuccessfulRound(verifier1, verifier2, verifier3, 1);
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS));
-        performSuccessfulRound(verifier1, verifier2, verifier3);
+        performSuccessfulRound(verifier1, verifier2, verifier3, 2);
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS));
-        performSuccessfulRound(verifier1, verifier2, verifier3);
+        performSuccessfulRound(verifier1, verifier2, verifier3, 3);
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.SUCCESS));
     }
@@ -190,10 +216,14 @@ contract ComputationMarketTest is Test {
         applyForVerification(verifier2);
         applyForVerification(verifier3);
 
+        triggerVerification(verifier1);
+        triggerVerification(verifier2);
+        triggerVerification(verifier3);
+
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer1")), keccak256(abi.encodePacked("nonce1")), verifier1));
-        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer2")), keccak256(abi.encodePacked("nonce2")), verifier2));
-        bytes32 computedHash3 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer3")), keccak256(abi.encodePacked("nonce3")), verifier3));
+        bytes32 computedHash1 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("wrong_answer1")), keccak256(abi.encodePacked("nonce1")), verifier1));
+        bytes32 computedHash2 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("wrong_answer2")), keccak256(abi.encodePacked("nonce2")), verifier2));
+        bytes32 computedHash3 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("wrong_answer3")), keccak256(abi.encodePacked("nonce3")), verifier3));
 
         submitCommitment(verifier1, computedHash1);
         submitCommitment(verifier2, computedHash2);
@@ -220,7 +250,10 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        market.calculateMajorityAndReward(0);
+
+        getRewardsAndStakes(verifier1, 1);
+        getRewardsAndStakes(verifier2, 1);
+        getRewardsAndStakes(verifier3, 1);
 
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS));
@@ -233,10 +266,14 @@ contract ComputationMarketTest is Test {
         applyForVerification(verifier2);
         applyForVerification(verifier3);
 
+        triggerVerification(verifier1);
+        triggerVerification(verifier2);
+        triggerVerification(verifier3);
+
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
-        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
-        bytes32 computedHash3 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), verifier3));
+        bytes32 computedHash1 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
+        bytes32 computedHash2 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
+        bytes32 computedHash3 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), verifier3));
 
         submitCommitment(verifier1, computedHash1);
         submitCommitment(verifier2, computedHash2);
@@ -263,7 +300,10 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        market.calculateMajorityAndReward(0);
+
+        getRewardsAndStakes(verifier1, 1);
+        getRewardsAndStakes(verifier2, 1);
+        getRewardsAndStakes(verifier3, 1);
 
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));
@@ -275,10 +315,15 @@ contract ComputationMarketTest is Test {
         applyForVerification(verifier2);
         applyForVerification(verifier3);
 
+        triggerVerification(verifier1);
+        triggerVerification(verifier2);
+        triggerVerification(verifier3);
+
+
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("answer1")), keccak256(abi.encodePacked("nonce1")), verifier1));
-        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("answer2")), keccak256(abi.encodePacked("nonce2")), verifier2));
-        bytes32 computedHash3 = keccak256(abi.encode(keccak256(abi.encodePacked("answer3")), keccak256(abi.encodePacked("nonce3")), verifier3));
+        bytes32 computedHash1 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("answer1")), keccak256(abi.encodePacked("nonce1")), verifier1));
+        bytes32 computedHash2 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("answer2")), keccak256(abi.encodePacked("nonce2")), verifier2));
+        bytes32 computedHash3 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("answer3")), keccak256(abi.encodePacked("nonce3")), verifier3));
 
         submitCommitment(verifier1, computedHash1);
         submitCommitment(verifier2, computedHash2);
@@ -305,7 +350,10 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        market.calculateMajorityAndReward(0);
+
+        getRewardsAndStakes(verifier1, 1);
+        getRewardsAndStakes(verifier2, 1);
+        getRewardsAndStakes(verifier3, 1);
 
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS));
@@ -317,9 +365,13 @@ contract ComputationMarketTest is Test {
         applyForVerification(verifier2);
         applyForVerification(verifier3);
 
+        triggerVerification(verifier1);
+        triggerVerification(verifier2);
+        triggerVerification(verifier3);
+
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
-        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
+        bytes32 computedHash1 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
+        bytes32 computedHash2 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
 
         submitCommitment(verifier1, computedHash1);
         submitCommitment(verifier2, computedHash2);
@@ -341,7 +393,10 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        market.calculateMajorityAndReward(0);
+
+        getRewardsAndStakes(verifier1, 1);
+        getRewardsAndStakes(verifier2, 1);
+        getRewardsAndStakes(verifier3, 1);
 
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS));
@@ -353,10 +408,14 @@ contract ComputationMarketTest is Test {
         applyForVerification(verifier2);
         applyForVerification(verifier3);
 
+        triggerVerification(verifier1);
+        triggerVerification(verifier2);
+        triggerVerification(verifier3);
+
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        bytes32 computedHash1 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
-        bytes32 computedHash2 = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
-        bytes32 computedHash3 = keccak256(abi.encode(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), verifier3));
+        bytes32 computedHash1 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce1")), verifier1));
+        bytes32 computedHash2 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce2")), verifier2));
+        bytes32 computedHash3 = keccak256(abi.encodePacked(keccak256(abi.encodePacked("wrong_answer")), keccak256(abi.encodePacked("nonce3")), verifier3));
 
         submitCommitment(verifier1, computedHash1);
         submitCommitment(verifier2, computedHash2);
@@ -381,7 +440,10 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        market.calculateMajorityAndReward(0);
+
+        getRewardsAndStakes(verifier1, 1);
+        getRewardsAndStakes(verifier2, 1);
+        getRewardsAndStakes(verifier3, 1);
 
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));

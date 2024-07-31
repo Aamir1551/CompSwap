@@ -1,7 +1,12 @@
+// TODO:
+// need a way for verifiers to extract stake when not everyone has triggered, and we ran out of time
+// have a function to trigger the next round if verifiers aren't collecting rewards
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "forge-std/console.sol";
 
 contract ComputationMarket {
     IERC20 public compToken; // The ERC20 token used for payments
@@ -71,6 +76,20 @@ contract ComputationMarket {
         bytes32 mainProviderAnswerHash; // The answer hash of the main provider
     }
 
+    // Structure representing the output of the getRoundDetails function
+    struct RoundDetailsOutput {
+        uint256 roundIndex;
+        uint256 layerComputeIndex;
+        uint256 verificationStartTime;
+        uint256 commitEndTime;
+        uint256 providerRevealEndTime;
+        uint256 commitmentRevealEndTime;
+        bytes32 majorityVoteHash;
+        uint256 majorityCount;
+        bytes32 mainProviderAnswerHash;
+    }
+
+
     uint256 public requestCount; // Total number of requests created
     uint256 public constant PROVIDER_STAKE_PERCENTAGE = 10; // Percentage of payment provider needs to stake
     uint256 public constant MIN_VERIFIERS = 3; // Minimum number of verifiers required
@@ -79,7 +98,7 @@ contract ComputationMarket {
     mapping(uint256 => Request) public requests; 
 
     // Mapping of request ID and round number to RoundDetails struct
-    mapping(uint256 => mapping(uint256 => RoundDetails)) private roundDetails;
+    mapping(uint256 => mapping(uint256 => RoundDetails)) public roundDetails;
 
     // Mapping of request ID, round number and verifier address to Verification struct
     mapping(uint256 => mapping(uint256 => mapping(address => Verification))) private verifications; 
@@ -225,6 +244,22 @@ contract ComputationMarket {
         return uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender))) % maxLimit;
     }
 
+    function getRoundDetails(uint256 requestId, uint256 roundIndex) external view returns (RoundDetailsOutput memory) {
+        RoundDetails storage roundDetailsOut = roundDetails[requestId][roundIndex];
+        RoundDetailsOutput memory output = RoundDetailsOutput({
+            roundIndex : roundDetailsOut.roundIndex,
+            layerComputeIndex : roundDetailsOut.layerComputeIndex,
+            verificationStartTime : roundDetailsOut.verificationStartTime,
+            commitEndTime : roundDetailsOut.commitEndTime,
+            providerRevealEndTime : roundDetailsOut.providerRevealEndTime,
+            commitmentRevealEndTime : roundDetailsOut.commitmentRevealEndTime,
+            majorityVoteHash : roundDetailsOut.majorityVoteHash,
+            majorityCount : roundDetailsOut.majorityCount,
+            mainProviderAnswerHash : roundDetailsOut.mainProviderAnswerHash
+        });
+        return output;
+    }
+
     // Function to withdraw funds/cancel request in case of an error or cancellation. 
     // 1. This can only happen before anyone has picked up the request, OR
     // 2. Request has been picked up, and comptuation deadline has been reached, but not yet computed
@@ -335,6 +370,7 @@ contract ComputationMarket {
     // Function to choose verifiers for the next round
     function chooseVerifiersForRequestTrigger(uint256 requestId) external {
         Request storage request = requests[requestId];
+        require(request.verifiers.length == request.numVerifiers, "Verifier list has not been filled");
         require(request.hasBeenComputed, "Request has not been computed yet");
         require(request.verifiers.length >= request.numVerifiersSampleSize, "Not enough verifiers to choose from");
         require(request.verificationDeadline >= block.timestamp + (3 * request.timeAllocatedForVerification), "Not enough time to perform round before verification deadline");
@@ -343,7 +379,7 @@ contract ComputationMarket {
         roundDetails[requestId][request.roundIndex].verifiersTriggered[msg.sender] = true;
 
         if(request.verifierSelectionCount < request.numVerifiersSampleSize) {
-            uint256 randNum = getRandomNumber(request.numVerifiers-1 - request.verifierSelectionCount) + request.verifierSelectionCount;
+            uint256 randNum = getRandomNumber(request.numVerifiers - request.verifierSelectionCount) + request.verifierSelectionCount;
 
             address swap1 = request.verifiers[randNum];
             address swap2 = request.verifiers[request.verifierSelectionCount];
@@ -352,6 +388,8 @@ contract ComputationMarket {
             request.verifiers[request.verifierSelectionCount] = swap1;
             emit VerifierChosen(requestId, request.verifiers[request.verifierSelectionCount], request.layerComputeIndex, request.verifierSelectionCount);
             roundDetails[requestId][request.roundIndex].verifiersChosen[swap1] = true;
+            request.chosenVerifiers.push(request.verifiers[request.verifierSelectionCount]);
+            request.totalPaidForVerification += request.paymentPerRoundForVerifiers;
         } else {
             if(request.verifierSelectionCount == request.numVerifiersSampleSize) {
                 startRound(requestId); 
@@ -361,6 +399,9 @@ contract ComputationMarket {
             verifiersUnchosen[requestId][request.roundIndex][request.verifiers[request.verifierSelectionCount]] = true;
         }
         request.verifierSelectionCount += 1;
+        if(request.verifierSelectionCount == request.numVerifiersSampleSize) {
+            startRound(requestId);
+        }
     }
 
     // Function to return stake for verifiers not chosen to participate in the next round
@@ -415,7 +456,7 @@ contract ComputationMarket {
         require(msg.sender == request.mainProvider, "Only the main provider can reveal the key and hash");
         require(block.timestamp > roundDetails[requestId][request.roundIndex].commitEndTime, "Commitment phase not ended");
         require(block.timestamp <= roundDetails[requestId][request.roundIndex].providerRevealEndTime, "Provider reveal phase ended");
-        roundDetails[requestId][request.roundIndex].mainProviderAnswerHash = keccak256(abi.encode(answerHash, true));
+        roundDetails[requestId][request.roundIndex].mainProviderAnswerHash = keccak256(abi.encodePacked(answerHash, true));
 
         request.state = RequestStates.PROVIDER_REVEAL_STATE;
         emit ProviderRevealed(requestId, privateKey, answerHash);
@@ -435,16 +476,15 @@ contract ComputationMarket {
 
         Verification storage verification = verifications[requestId][request.roundIndex][msg.sender];
         require(!verification.revealed, "Commitment already revealed");
-        require(keccak256(abi.encode(answer, nonce, msg.sender)) == verification.computedHash, "Invalid reveal values");
-
-        bytes32 voteHash = keccak256(abi.encode(verification.answer, verification.agree));
+        require(keccak256(abi.encodePacked(answer, nonce, msg.sender)) == verification.computedHash, "Invalid reveal values");
+        bytes32 voteHash = keccak256(abi.encodePacked(answer, agree));
 
         verification.agree = agree;
         verification.answer = answer;
         verification.nonce = nonce;
         verification.revealed = true;
         verification.verifier = msg.sender;
-        verification.voteHash = keccak256(abi.encode(verification.answer, verification.agree));
+        verification.voteHash = voteHash;
 
         RoundDetails storage round = roundDetails[requestId][request.roundIndex];
 
@@ -454,10 +494,20 @@ contract ComputationMarket {
             roundDetails[requestId][request.roundIndex].majorityVoteHash = bytes32(0);
         } else if (round.votes[voteHash] > round.majorityCount) {
             roundDetails[requestId][request.roundIndex].majorityVoteHash = voteHash;
+            round.majorityCount = round.votes[voteHash];
         }
 
         request.state = RequestStates.COMMITMENT_REVEAL_STATE;
         emit RevealVerificationDetails(requestId, block.timestamp, msg.sender);
+    }
+
+    function startNextRound(uint256 requestId) external {
+        Request storage request = requests[requestId];
+        require(request.state == RequestStates.COMMITMENT_REVEAL_STATE, "Request not yet in commitment reveal state");
+        require(block.timestamp >= roundDetails[requestId][request.roundIndex].commitmentRevealEndTime, "commitment stage has not yet completed");
+        bytes32 majorityVoteHashForRound = roundDetails[requestId][request.roundIndex].majorityVoteHash;
+        require(roundDetails[requestId][request.roundIndex].mainProviderAnswerHash == majorityVoteHashForRound, "Provider answer hash does not match majority vote hash");
+        initialiseRound(requestId);
     }
 
     // Function to calculate the majority vote and allow msg.sender to extract reward if msg.sender vote agreed with majority of the voters
@@ -467,53 +517,59 @@ contract ComputationMarket {
         require(block.timestamp >= roundDetails[requestId][roundNum].commitmentRevealEndTime, "commitment stage has not yet completed");
         require(roundDetails[requestId][roundNum].verifiersChosen[msg.sender], "You are not the chosen verifier in this round");
         require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "You have already been paid for verification");
-
+        require(roundNum <= request.roundIndex, "round num must be less than or equal to request.roundIndex");
+        require(roundNum >= 1, "Round number must be greater than or equal to 1");
+        verifications[requestId][roundNum][msg.sender].verifierPaid = true;
         bytes32 majorityVoteHashForRound = roundDetails[requestId][roundNum].majorityVoteHash;
         if(majorityVoteHashForRound == bytes32(0)) {
             compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
-            if (roundNum < request.roundIndex) {
+            if (roundNum == request.roundIndex) {
                 initialiseRound(requestId);
             }
         } else {
             if (majorityVoteHashForRound == verifications[requestId][roundNum][msg.sender].voteHash) {
+                
                 uint256 reward = request.paymentPerRoundForVerifiers * request.numVerifiersSampleSize / roundDetails[requestId][roundNum].votes[majorityVoteHashForRound];
                 uint256 stake = request.paymentPerRoundForVerifiers;
-                request.totalPaidForVerification += reward;
                 compToken.transfer(msg.sender, reward + stake);
             }
             // provider doesn't match with majority vote, then provider failure
-            if(roundDetails[requestId][request.roundIndex].mainProviderAnswerHash != majorityVoteHashForRound) {
-                providerFailure(requestId); 
-            } else {
-                if(roundNum < request.roundIndex) {
-                    request.layerComputeIndex++;
-                    initialiseRound(requestId);
+            if(request.roundIndex == roundNum) {
+                if(roundDetails[requestId][roundNum].mainProviderAnswerHash != majorityVoteHashForRound) {
+                    if(request.state != RequestStates.UNSUCCESSFUL) {
+                        providerFailure(requestId);
+                    }
+                } else {
+                    if(request.layerComputeIndex == request.layerCount - 1) {
+                        request.layerComputeIndex++;
+                        providerSuccess(requestId);
+                        //providerSuccessCall(requestId);
+                    }
+                    else if(roundNum == request.roundIndex && request.layerComputeIndex != request.layerCount) {
+                        request.layerComputeIndex++;
+                        initialiseRound(requestId);
+                    }
                 }
             }
         }
     }
 
-    // Function to finalize the verification and compute the next layer
-    function finalizeVerification(uint256 requestId, bool success) internal {
+    // Function is triggered automatically once all verification rounds are completed
+    function providerSuccess(uint256 requestId) internal {
         Request storage request = requests[requestId];
-        require(request.layerComputeIndex < request.layerCount, "All layers have been processed");
+        require(request.state != RequestStates.UNSUCCESSFUL, "Request is unsuccessful");
+        require(!request.completed, "Request is already completed");
 
-        if (success) {
-          if (request.layerComputeIndex < request.layerCount - 1) {
-            request.layerComputeIndex++;
-            initialiseRound(requestId);
-          } else {
-            request.layerComputeIndex++;
-          }
-        } else {
-            providerFailure(requestId);
-        }
+        request.completed = true;
+        compToken.transfer(request.mainProvider, request.stake + request.paymentForProvider);
+        request.state = RequestStates.SUCCESS;
+        emit ProviderResultSuccessfullyVerified(requestId);
     }
 
     // Provider calls this function, once the verification deadline has passed, and all rounds currently peformed agreed with the main provider
     function providerSuccessCall(uint256 requestId) public {
         Request storage request = requests[requestId];
-        require(block.timestamp >= request.verificationDeadline && request.completed && request.state != RequestStates.UNSUCCESSFUL && !request.completed);
+        require(block.timestamp >= request.verificationDeadline && request.state != RequestStates.UNSUCCESSFUL && !request.completed, "Verification Deadline has not been passed.");
         request.completed = true;
         compToken.transfer(request.mainProvider, request.stake + request.paymentForProvider);
         request.state = RequestStates.SUCCESS;
@@ -521,11 +577,17 @@ contract ComputationMarket {
     }
 
     // Consumer gets to take the stake of the provider, if the provider did an incorrect calculation
-    function providerFailure(uint256 requestId) internal {
+    function providerFailure(uint256 requestId) public {
         Request storage request = requests[requestId];
+        bytes32 majorityVoteHashForRound = roundDetails[requestId][request.roundIndex].majorityVoteHash;
+
+        require(roundDetails[requestId][request.roundIndex].mainProviderAnswerHash != majorityVoteHashForRound &&
+            request.state != RequestStates.UNSUCCESSFUL, "Request is already in unsuccessful state");
+
+        request.state = RequestStates.UNSUCCESSFUL;
+
         compToken.transfer(request.consumer, request.paymentForProvider + request.stake + request.totalPaymentForVerifiers - request.totalPaidForVerification);
         request.completed = true;
-        request.state = RequestStates.UNSUCCESSFUL;
         emit ProviderResultUnsuccessful(requestId);
     }
 

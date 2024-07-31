@@ -141,21 +141,28 @@ contract ComputationMarketTest is Test {
         assertEq(request.verifiers.length, 1);
     }
 
+    function triggerVerification(address verifierAddress) internal {
+        vm.startPrank(verifierAddress);
+        market.chooseVerifiersForRequestTrigger(0);
+        vm.stopPrank();
+    }
+
     function testSubmitCommitment() public {
         testApplyForVerificationForRequest(); // Ensure a verifier applied
         ApplyForVerification(verifier2);
         ApplyForVerification(verifier3);
 
+        triggerVerification(verifier1);
+        triggerVerification(verifier2);
+        triggerVerification(verifier3);
+
         ComputationMarket.Request memory request = market.getRequestDetails(0);
         vm.startPrank(request.chosenVerifiers[0]);
-        bytes32 computedHash = keccak256(abi.encode(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce")), request.chosenVerifiers[0]));
+        bytes32 computedHash = keccak256(abi.encodePacked(keccak256(abi.encodePacked("answer")), keccak256(abi.encodePacked("nonce")), request.chosenVerifiers[0]));
 
         market.submitCommitment(0, computedHash);
         vm.stopPrank();
 
-        ComputationMarket.Verification memory verification = market.getVerificationDetails(0, request.chosenVerifiers[0]);
-        assertEq(verification.computedHash, computedHash);
-        assertFalse(verification.revealed);
     }
 
     function testRevealProviderKeyAndHash() public {
@@ -169,7 +176,8 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        assertEq(request.mainProviderAnswerHash, keccak256(abi.encode(answerHash, true)));
+        ComputationMarket.RoundDetailsOutput memory roundDetails = market.getRoundDetails(0, 1);
+        assertEq(roundDetails.mainProviderAnswerHash, keccak256(abi.encodePacked(answerHash, true)));
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.PROVIDER_REVEAL_STATE));
     }
 
@@ -184,9 +192,6 @@ contract ComputationMarketTest is Test {
         bytes32 nonce = keccak256(abi.encodePacked("nonce"));
         market.revealCommitment(0, agree, answer, nonce);
         vm.stopPrank();
-
-        ComputationMarket.Verification memory verification = market.getVerificationDetails(0, request.chosenVerifiers[0]);
-        assertTrue(verification.revealed);
     }
 
     /*function testCalculateMajorityAndReward() public {

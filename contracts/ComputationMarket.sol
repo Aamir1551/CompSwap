@@ -46,6 +46,7 @@ contract ComputationMarket {
         uint256 protocolVersion; // Version of the protocol we are following
         uint256 verifierSelectionCount; // Number of verifiers selected for the current round
         uint256 computedTimeByProvider; // Time when the provider computed the request
+        uint256 layerSize; // Number of operations that are verified within each of the layers for each round
     }
 
     // Structure representing a verification
@@ -183,9 +184,10 @@ contract ComputationMarket {
         uint256 verificationDeadline, 
         uint256 timeAllocatedForVerification,
         uint256 numVerifiersSampleSize,
-        uint256 protocolVersion
+        uint256 protocolVersion,
+        uint256 layerSize
     ) external {
-        uint256 layerCount = (numOperations + 999) / 1000;
+        uint256 layerCount = (numOperations + layerSize - 1) / layerSize;
         uint256 totalPaymentForVerifiers = paymentPerRoundForVerifiers * numVerifiersSampleSize * layerCount;
         uint256 totalPayment = paymentForProvider + totalPaymentForVerifiers;
 
@@ -229,7 +231,8 @@ contract ComputationMarket {
             totalPaidForVerification: 0,
             protocolVersion: protocolVersion,
             verifierSelectionCount: 0,
-            computedTimeByProvider: 0 
+            computedTimeByProvider: 0 ,
+            layerSize: layerSize
         });
         requestCount++;
 

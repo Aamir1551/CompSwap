@@ -94,7 +94,8 @@ contract ComputationMarketTest is Test {
             block.timestamp + verificationDeadline,
             timeAllocatedForVerification,
             numVerifiersSampleSize,
-            1
+            1,
+            1000
         );
         vm.stopPrank();
     }

@@ -3,19 +3,14 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
 import "../contracts/ComputationMarket.sol";
+import "../contracts/COMPToken.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-contract MockERC20 is ERC20 {
-    constructor() ERC20("Mock COMP Token", "COMP") {
-        _mint(msg.sender, 1000000000000000000000000000 * 10 ** decimals());
-    }
-}
-
 contract ComputationMarketTest is Test {
     ComputationMarket public market;
-    MockERC20 public compToken;
+    COMPToken public compToken;
 
     address consumer = address(1);
     address provider = address(2);
@@ -38,7 +33,7 @@ contract ComputationMarketTest is Test {
 
     function setUp() public {
         // Deploy the mock COMP token and the market contract
-        compToken = new MockERC20();
+        compToken = new COMPToken(1000000000000000000000000000 * 10 ** 18);
         market = new ComputationMarket(address(compToken));
 
         // Distribute COMP tokens to test accounts
@@ -95,7 +90,8 @@ contract ComputationMarketTest is Test {
             block.timestamp + verificationDeadline,
             timeAllocatedForVerification,
             numVerifiersSampleSize,
-            1
+            1,
+            1000
         );
         vm.stopPrank();
     }

@@ -185,6 +185,7 @@ contract ComputationMarketTest is Test {
 
         // Fetch the chosen verifiers from the request structure
         ComputationMarket.Request memory request = market.getRequestDetails(0);
+        correctNumberOfVerifiersChosen(request);
         chosenVerifiers = request.chosenVerifiers;
 
         for (uint256 i = 0; i < request.chosenVerifiers.length; i++) {
@@ -251,7 +252,25 @@ contract ComputationMarketTest is Test {
         }
     }
 
+    // Ensure that only 5 verifiers from the 7 verifiers are chosen for verification
+    function correctNumberOfVerifiersChosen(ComputationMarket.Request memory request) public view {
+        address[] memory isVerifierChosen = new address[](7);
+        assertEq(request.chosenVerifiers.length, 5);
+        for(uint256 i = 0; i < request.chosenVerifiers.length; i++) {
+            // Check if the chosen verifier has been chosen
+            for(uint256 j = 0; j < i; j++) {
+                assertNotEq(request.chosenVerifiers[i], isVerifierChosen[j]);
+            }
+            isVerifierChosen[i] = request.chosenVerifiers[i];
+        }
+    }
+
     function testVerifierBalancesAfterRounds() public {
+        
+        // Initial balances of Consumer and Provider
+        uint256 consumerBalanceBefore = compToken.balanceOf(consumer);
+        uint256 providerBalanceBefore = compToken.balanceOf(provider);
+
         completeTestRequest();
 
         address[] memory verifiers = new address[](7);
@@ -341,6 +360,12 @@ contract ComputationMarketTest is Test {
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.SUCCESS));
+
+        // Check balance of consumer
+        assertEq(compToken.balanceOf(consumer), consumerBalanceBefore - paymentForProvider - paymentPerRoundForVerifiers * 3 * 5);
+
+        // Check balance of provider
+        assertEq(compToken.balanceOf(provider), providerBalanceBefore + paymentForProvider);
     }
 
     function testCancelRequestAfterSelection() public {
@@ -364,7 +389,7 @@ contract ComputationMarketTest is Test {
         ComputationMarket.Request memory request = market.getRequestDetails(0);
         assertTrue(request.completed);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.CANCELLED));
-        
+
         // Check balance of consumer after request is cancelled
         assertEq(compToken.balanceOf(consumer), initialBalanceConsumer + stakeAmount);
     }
@@ -377,12 +402,18 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
     }
 
-    /*function testMultipleRoundsWithVerifierSampling() public {
+    function testWhenProviderIsIncorrect() public {
+        
+        // Initial balances of Consumer and Provider
+        uint256 consumerBalanceBefore = compToken.balanceOf(consumer);
+        uint256 providerBalanceBefore = compToken.balanceOf(provider);
+
         completeTestRequest();
 
         address[] memory verifiers = new address[](7);
         bytes32[] memory answers = new bytes32[](7);
         bool[] memory agreements = new bool[](7);
+        uint256[] memory verifierBalances = new uint256[](7);
 
         verifiers[0] = verifier1;
         verifiers[1] = verifier2;
@@ -392,12 +423,16 @@ contract ComputationMarketTest is Test {
         verifiers[5] = verifier6;
         verifiers[6] = verifier7;
 
+        for(uint256 i=0; i<verifiers.length; i++) {
+            verifierBalances[i] = compToken.balanceOf(verifiers[i]);
+        }
+
         // Round 1
         answers[0] = keccak256(abi.encodePacked("answer"));
         answers[1] = keccak256(abi.encodePacked("answer"));
         answers[2] = keccak256(abi.encodePacked("wrong_answer"));
         answers[3] = keccak256(abi.encodePacked("answer"));
-        answers[4] = keccak256(abi.encodePacked("answer"));
+        answers[4] = keccak256(abi.encodePacked("answer123"));
         answers[5] = keccak256(abi.encodePacked("answer"));
         answers[6] = keccak256(abi.encodePacked("answer"));
         agreements[0] = true;
@@ -407,52 +442,56 @@ contract ComputationMarketTest is Test {
         agreements[4] = true;
         agreements[5] = true;
         agreements[6] = true;
-        performRoundWithVerifiers(verifiers, answers, agreements, true);
+        address[] memory chosenVerifiersFromRound = performRoundWithVerifiers(verifiers, answers, agreements, true, 1);
+        checkBalancesAfterRound(verifierBalances, 1, chosenVerifiersFromRound, answers, agreements, verifiers);
+
+        for(uint256 i=0; i<verifiers.length; i++) {
+            if(compToken.balanceOf(verifiers[i]) == 0) {
+                compToken.transfer(verifiers[i], 10);
+                verifierBalances[i] = compToken.balanceOf(verifiers[i]);
+            }
+        }
 
         // Round 2
-        answers[0] = keccak256(abi.encodePacked("answer"));
-        answers[1] = keccak256(abi.encodePacked("answer"));
+        answers[0] = keccak256(abi.encodePacked("answer4"));
+        answers[1] = keccak256(abi.encodePacked("answer4"));
         answers[2] = keccak256(abi.encodePacked("wrong_answer"));
-        answers[3] = keccak256(abi.encodePacked("answer"));
-        answers[4] = keccak256(abi.encodePacked("answer"));
-        answers[5] = keccak256(abi.encodePacked("answer"));
+        answers[3] = keccak256(abi.encodePacked("answer4"));
+        answers[4] = keccak256(abi.encodePacked("answer4"));
+        answers[5] = keccak256(abi.encodePacked("answer4"));
         answers[6] = keccak256(abi.encodePacked("answer"));
-        agreements[0] = true;
-        agreements[1] = true;
+        agreements[0] = false;
+        agreements[1] = false;
         agreements[2] = false;
-        agreements[3] = true;
-        agreements[4] = true;
-        agreements[5] = true;
-        agreements[6] = true;
-        performRoundWithVerifiers(verifiers, answers, agreements, true);
-
-        // Round 3
-        answers[0] = keccak256(abi.encodePacked("answer"));
-        answers[1] = keccak256(abi.encodePacked("answer"));
-        answers[2] = keccak256(abi.encodePacked("wrong_answer"));
-        answers[3] = keccak256(abi.encodePacked("answer"));
-        answers[4] = keccak256(abi.encodePacked("answer"));
-        answers[5] = keccak256(abi.encodePacked("answer"));
-        answers[6] = keccak256(abi.encodePacked("answer"));
-        agreements[0] = true;
-        agreements[1] = true;
-        agreements[2] = false;
-        agreements[3] = true;
-        agreements[4] = true;
-        agreements[5] = true;
-        agreements[6] = true;
-        performRoundWithVerifiers(verifiers, answers, agreements, true);
+        agreements[3] = false;
+        agreements[4] = false;
+        agreements[5] = false;
+        agreements[6] = false;
+        chosenVerifiersFromRound = performRoundWithVerifiers(verifiers, answers, agreements, false, 2);
+        checkBalancesAfterRound(verifierBalances, 2, chosenVerifiersFromRound, answers, agreements, verifiers);
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
-        assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.SUCCESS));
+        assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));
+
+        uint256 stakeAmount = (paymentForProvider * PROVIDER_STAKE_PERCENTAGE) / 100;
+        // Check balance of consumer
+        assertEq(compToken.balanceOf(consumer), consumerBalanceBefore + stakeAmount - paymentPerRoundForVerifiers * 2 * 5);
+
+        // Check balance of provider
+        assertEq(compToken.balanceOf(provider), providerBalanceBefore - stakeAmount);
     }
 
     function testVerifierTimeoutWithPartialReveals() public {
+        // Initial balances of Consumer and Provider
+        uint256 consumerBalanceBefore = compToken.balanceOf(consumer);
+        uint256 providerBalanceBefore = compToken.balanceOf(provider);
+
         completeTestRequest();
 
         address[] memory verifiers = new address[](7);
         bytes32[] memory answers = new bytes32[](7);
         bool[] memory agreements = new bool[](7);
+        uint256[] memory verifierBalances = new uint256[](7);
 
         verifiers[0] = verifier1;
         verifiers[1] = verifier2;
@@ -462,12 +501,16 @@ contract ComputationMarketTest is Test {
         verifiers[5] = verifier6;
         verifiers[6] = verifier7;
 
+        for(uint256 i=0; i<verifiers.length; i++) {
+            verifierBalances[i] = compToken.balanceOf(verifiers[i]);
+        }
+
         // Round 1
         answers[0] = keccak256(abi.encodePacked("answer"));
         answers[1] = keccak256(abi.encodePacked("answer"));
         answers[2] = keccak256(abi.encodePacked("wrong_answer"));
         answers[3] = keccak256(abi.encodePacked("answer"));
-        answers[4] = keccak256(abi.encodePacked("answer"));
+        answers[4] = keccak256(abi.encodePacked("answer123"));
         answers[5] = keccak256(abi.encodePacked("answer"));
         answers[6] = keccak256(abi.encodePacked("answer"));
         agreements[0] = true;
@@ -478,16 +521,27 @@ contract ComputationMarketTest is Test {
         agreements[5] = true;
         agreements[6] = true;
 
+        // Apply for verification
         for (uint256 i = 0; i < verifiers.length; i++) {
             applyForVerification(verifiers[i]);
         }
 
+        // Trigger verification
+        for (uint256 i = 0; i < verifiers.length; i++) {
+            triggerVerification(verifiers[i]);
+        }
+
+        // Fetch the chosen verifiers from the request structure
         ComputationMarket.Request memory request = market.getRequestDetails(0);
+        correctNumberOfVerifiersChosen(request);
 
         for (uint256 i = 0; i < request.chosenVerifiers.length; i++) {
             uint256 verifierIndex = findVerifierIndex(request.chosenVerifiers[i], verifiers);
-            bytes32 computedHash = keccak256(abi.encodePacked(agreements[verifierIndex], answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), request.chosenVerifiers[i]));
-            submitCommitment(request.chosenVerifiers[i], computedHash);
+            bytes32 computedHash = keccak256(abi.encodePacked(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), request.chosenVerifiers[i]));
+            //submitCommitment(request.chosenVerifiers[i], computedHash);
+            if(i <= 3) {
+                submitCommitment(request.chosenVerifiers[i], computedHash);
+            }
         }
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
@@ -498,25 +552,137 @@ contract ComputationMarketTest is Test {
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
 
-        // Only partial reveals
-        vm.startPrank(request.chosenVerifiers[0]);
-        uint256 verifierIndex0 = findVerifierIndex(request.chosenVerifiers[0], verifiers);
-        market.revealCommitment(0, agreements[verifierIndex0], answers[verifierIndex0], keccak256(abi.encodePacked("nonce", verifierIndex0)));
-        vm.stopPrank();
-
-        vm.startPrank(request.chosenVerifiers[1]);
-        uint256 verifierIndex1 = findVerifierIndex(request.chosenVerifiers[1], verifiers);
-        market.revealCommitment(0, agreements[verifierIndex1], answers[verifierIndex1], keccak256(abi.encodePacked("nonce", verifierIndex1)));
-        vm.stopPrank();
+        for (uint256 i = 0; i < request.chosenVerifiers.length; i++) {
+            uint256 verifierIndex = findVerifierIndex(request.chosenVerifiers[i], verifiers);
+            vm.startPrank(request.chosenVerifiers[i]);
+            if(i <= 3) {
+                market.revealCommitment(0, agreements[verifierIndex], answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)));
+            }
+            vm.stopPrank();
+        }
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        market.calculateMajorityAndReward(0);
 
+        address[] memory chosenVerifiersForRound = request.chosenVerifiers;
+        allVerifiersCollectRewards(0, 1);
+
+        // We check the chosen verifiers list in the request structure and make sure only the ones that were chosen were rewarded
+        request = market.getRequestDetails(0);
+        ComputationMarket.RoundDetailsOutput memory round = market.getRoundDetails(0, 1);
+        // Get number of verifiers who agreed with the majority
+        uint256 majorityCountOfVerifiersInRound = round.majorityCount;
+        uint256 amountPaidForCorrectAnswer = request.paymentPerRoundForVerifiers * request.numVerifiersSampleSize / majorityCountOfVerifiersInRound;
+
+        for(uint256 i = 0; i < chosenVerifiersForRound.length; i++) {
+            uint256 verifierIndex = findVerifierIndex(chosenVerifiersForRound[i], verifiers);
+            // Ensure that verifier has been either been rewarded or has now lost their stake if they disagreed with the majority
+
+            bytes32 computedHashForVerifier = keccak256(abi.encodePacked(answers[verifierIndex], agreements[verifierIndex]));
+            if(i > 3) {
+                computedHashForVerifier = bytes32(0);
+            }
+
+            uint256 newBalanceOfVerifier = compToken.balanceOf(chosenVerifiersForRound[i]);
+            if(computedHashForVerifier == market.getRoundDetails(0, 1).majorityVoteHash) {
+                assertEq(newBalanceOfVerifier, verifierBalances[verifierIndex] + amountPaidForCorrectAnswer);
+                verifierBalances[verifierIndex] = newBalanceOfVerifier;
+            } else {
+                assertEq(newBalanceOfVerifier, verifierBalances[verifierIndex] - paymentPerRoundForVerifiers);
+                verifierBalances[verifierIndex] = newBalanceOfVerifier;
+            }
+        }
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS));
     }
 
-    function testProviderTimeoutScenario() public {
+    // In general we do not expect verifiers to not trigger at all, since they are losing stake
+    function testSomeVerifiersNotTriggered() public {
+        // Initial balances of Consumer and Provider
+        uint256 consumerBalanceBefore = compToken.balanceOf(consumer);
+        uint256 providerBalanceBefore = compToken.balanceOf(provider);
+
+        completeTestRequest();
+
+        address[] memory verifiers = new address[](7);
+        bytes32[] memory answers = new bytes32[](7);
+        bool[] memory agreements = new bool[](7);
+        uint256[] memory verifierBalances = new uint256[](7);
+
+        verifiers[0] = verifier1;
+        verifiers[1] = verifier2;
+        verifiers[2] = verifier3;
+        verifiers[3] = verifier4;
+        verifiers[4] = verifier5;
+        verifiers[5] = verifier6;
+        verifiers[6] = verifier7;
+
+        for(uint256 i=0; i<verifiers.length; i++) {
+            verifierBalances[i] = compToken.balanceOf(verifiers[i]);
+        }
+
+        // Round 1
+        answers[0] = keccak256(abi.encodePacked("answer"));
+        answers[1] = keccak256(abi.encodePacked("answer"));
+        answers[2] = keccak256(abi.encodePacked("wrong_answer"));
+        answers[3] = keccak256(abi.encodePacked("answer"));
+        answers[4] = keccak256(abi.encodePacked("answer123"));
+        answers[5] = keccak256(abi.encodePacked("answer"));
+        answers[6] = keccak256(abi.encodePacked("answer"));
+        agreements[0] = true;
+        agreements[1] = true;
+        agreements[2] = false;
+        agreements[3] = true;
+        agreements[4] = true;
+        agreements[5] = true;
+        agreements[6] = true;
+
+        // Apply for verification
+        for (uint256 i = 0; i < verifiers.length; i++) {
+            applyForVerification(verifiers[i]);
+        }
+
+        // Trigger verification. Last verifier is not triggered
+        for (uint256 i = 0; i < verifiers.length-1; i++) {
+            triggerVerification(verifiers[i]);
+        }
+
+        // Get Address of verifier that triggered but is not chosen
+        address verifierNotChosenButTriggered = address(0);
+        ComputationMarket.Request memory request = market.getRequestDetails(0);
+        for(uint256 i=0; i<verifiers.length-1; i++) {
+            bool verifierNotChosenButTriggeredFound = true;
+            for(uint256 j=0; j<request.chosenVerifiers.length; j++) {
+                if(verifiers[i] == request.chosenVerifiers[j]) {
+                    verifierNotChosenButTriggeredFound = false;
+                }
+            }
+            if(verifierNotChosenButTriggeredFound) {
+                verifierNotChosenButTriggered = verifiers[i];
+                break;
+            }
+        }
+
+        // Get balance of verifier that triggered but is not chosen and the verifier that did not trigger
+        uint256 balanceOfVerifierNotChosenButTriggered = compToken.balanceOf(verifierNotChosenButTriggered);
+        uint256 balanceOfVerifierDidNotTrigger = compToken.balanceOf(verifiers[verifiers.length-1]);
+
+        vm.startPrank(verifierNotChosenButTriggered);
+        market.returnStake(0, 1);
+        vm.stopPrank();
+        vm.startPrank(verifiers[verifiers.length-1]);
+        vm.expectRevert("You did not trigger");
+        market.returnStake(0, 1);
+        vm.stopPrank();
+
+        // Check Balance for Verifier that triggered but was not chosen
+        assertEq(compToken.balanceOf(verifierNotChosenButTriggered), balanceOfVerifierNotChosenButTriggered + paymentPerRoundForVerifiers);
+
+        // Check Balance for verifier that did not trigger
+        assertEq(compToken.balanceOf(verifiers[verifiers.length-1]), balanceOfVerifierDidNotTrigger);
+
+    }
+
+    /*function testProviderTimeoutScenario() public {
         completeTestRequest();
 
         address[] memory verifiers = new address[](7);

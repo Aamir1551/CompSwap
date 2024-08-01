@@ -1,7 +1,3 @@
-// TODO:
-// need a way for verifiers to extract stake when not everyone has triggered, and we ran out of time
-// do it such that, you can only apply for verification after 2 seconds
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
@@ -103,9 +99,6 @@ contract ComputationMarket {
 
     // Mapping of request ID, round number and verifier address to Verification struct
     mapping(uint256 => mapping(uint256 => mapping(address => Verification))) private verifications; 
-
-    // Mapping of request Id and round number to check whether the verifier has not been chosen for that round
-    mapping(uint256 => mapping(uint256 => mapping(address => bool))) private verifiersUnchosen;
 
     // Event emitted when a new request is created
     event RequestCreated(uint256 indexed requestId, address indexed consumer);
@@ -366,7 +359,6 @@ contract ComputationMarket {
 
         if (request.verifiers.length == request.numVerifiers) {
             emit VerificationSelectionStarted(requestId, request.layerComputeIndex);
-            //chooseVerifiersForRequest(requestId);
         }
     }
 
@@ -405,12 +397,8 @@ contract ComputationMarket {
             request.chosenVerifiers.push(request.verifiers[request.verifierSelectionCount]);
             request.totalPaidForVerification += request.paymentPerRoundForVerifiers;
         } else {
-            if(request.verifierSelectionCount == request.numVerifiersSampleSize) {
-                startRound(requestId); 
-            }
             emit VerifierUnchosen(requestId, request.verifiers[request.verifierSelectionCount], request.layerComputeIndex, request.verifierSelectionCount);
             compToken.transfer(request.verifiers[request.verifierSelectionCount], request.paymentPerRoundForVerifiers);
-            verifiersUnchosen[requestId][request.roundIndex][request.verifiers[request.verifierSelectionCount]] = true;
         }
         request.verifierSelectionCount += 1;
         if(request.verifierSelectionCount == request.numVerifiersSampleSize) {
@@ -419,28 +407,24 @@ contract ComputationMarket {
     }
 
     // Function to return stake for verifiers if we do not have enough time to perform the next round 
-    function returnStakeDueToTimeout(uint256 requestId) external {
+    function returnStakeDueToTimeout(uint256 requestId, uint256 roundNum) external {
         Request storage request = requests[requestId];
 
-        require(roundDetails[requestId][request.roundIndex].verifiersApplied[msg.sender], "You are not the verifier for this round");
+        require(roundDetails[requestId][roundNum].verifiersApplied[msg.sender], "You are not the verifier for this round");
         require(request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification), "Still enough time to perform round before verification deadline");
         require(request.state == ComputationMarket.RequestStates.CHOOSING_VERIFIERS, "Request Must be in choosing verifiers state");
-
-        // This is to stop the unchosen verifiers from requesting their stake again using the returnStake function
-        if(verifiersUnchosen[requestId][request.roundIndex][msg.sender]) {
-            compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
-            verifiersUnchosen[requestId][request.roundIndex][msg.sender] = false;
-        } else {
-            compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
-        }
+        require(verifications[requestId][roundNum][msg.sender].verifierPaid, "Already been paid");
+        compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
     }
 
     // Function to return stake for verifiers not chosen to participate in the next round
-    function returnStake(uint256 requestId) external {
-        Request storage request = requests[requestId];
-        require(verifiersUnchosen[requestId][request.roundIndex][msg.sender], "Either stake has already been returned, or not the correct verifier");
-        compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers); 
-        verifiersUnchosen[requestId][request.roundIndex][msg.sender] = false;
+    function returnStake(uint256 requestId, uint256 roundNum) external {
+        require(roundDetails[requestId][roundNum].verifiersTriggered[msg.sender], "You did not trigger");
+        require(!roundDetails[requestId][roundNum].verifiersChosen[msg.sender], "Chosen verifeir cannot return stake");
+        require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "Already been paid");
+
+        compToken.transfer(msg.sender, requests[requestId].paymentPerRoundForVerifiers); 
+        verifications[requestId][roundNum][msg.sender].verifierPaid = true;
     }
 
     // Function to start a round of verification
@@ -470,6 +454,8 @@ contract ComputationMarket {
         require(request.state == RequestStates.COMMITMENT_STATE, "Request not yet in commitment state");
         require(block.timestamp <= roundDetails[requestId][request.roundIndex].commitEndTime, "Commitment phase ended");
         require(roundDetails[requestId][request.roundIndex].verifiersChosen[msg.sender], "You are not the chosen verifier in this round");
+        require(roundDetails[requestId][request.roundIndex].verifiersTriggered[msg.sender], "You did not trigger");
+
 
         verification.computedHash = computedHash;
 
@@ -502,8 +488,8 @@ contract ComputationMarket {
         Request storage request = requests[requestId];
         require(block.timestamp > roundDetails[requestId][request.roundIndex].providerRevealEndTime, "Provider reveal phase not ended");
         require(block.timestamp <= roundDetails[requestId][request.roundIndex].commitmentRevealEndTime, "Reveal phase ended");
-        //require(isVerifierChosen(requestId, msg.sender), "You are not a chosen verifier");
         require(roundDetails[requestId][request.roundIndex].verifiersChosen[msg.sender], "You are not the chosen verifier");
+        require(roundDetails[requestId][request.roundIndex].verifiersTriggered[msg.sender], "You did not trigger");
 
         Verification storage verification = verifications[requestId][request.roundIndex][msg.sender];
         require(!verification.revealed, "Commitment already revealed");
@@ -545,11 +531,14 @@ contract ComputationMarket {
     function calculateMajorityAndReward(uint256 requestId, uint256 roundNum) public {
         Request storage request = requests[requestId];
 
+
         require(block.timestamp >= roundDetails[requestId][roundNum].commitmentRevealEndTime, "commitment stage has not yet completed");
         require(roundDetails[requestId][roundNum].verifiersChosen[msg.sender], "You are not the chosen verifier in this round");
         require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "You have already been paid for verification");
         require(roundNum <= request.roundIndex, "round num must be less than or equal to request.roundIndex");
         require(roundNum >= 1, "Round number must be greater than or equal to 1");
+        require(roundDetails[requestId][roundNum].verifiersTriggered[msg.sender], "You did not trigger");
+
         verifications[requestId][roundNum][msg.sender].verifierPaid = true;
         bytes32 majorityVoteHashForRound = roundDetails[requestId][roundNum].majorityVoteHash;
         if(majorityVoteHashForRound == bytes32(0)) {

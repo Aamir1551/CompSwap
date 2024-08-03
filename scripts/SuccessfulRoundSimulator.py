@@ -68,13 +68,13 @@ def approve_tokens(spender_address, amount, account, private_key):
     func = comp_token_contract.functions.approve(spender_address, amount)
     receipt = build_and_send_tx(func, account, private_key)
     print(f"{account.address} approved {amount} tokens for {spender_address}")
-    print_balance([account], ["Account"])
+    #print_balance([account], ["Account"])
 
 def transfer_tokens(to_account, amount, from_account, private_key):
     func = comp_token_contract.functions.transfer(to_account.address, amount)
     receipt = build_and_send_tx(func, from_account, private_key)
     print(f"Transferred {amount} tokens from {from_account.address} to {to_account.address}")
-    print_balance([from_account, to_account], ["Sender", "Recipient"])
+    #print_balance([from_account, to_account], ["Sender", "Recipient"])
 
 def create_request(account, private_key):
     func = market_contract.functions.createRequest(
@@ -109,7 +109,7 @@ def complete_request(provider_account, private_key, request_id, outputFileURLs):
     func = market_contract.functions.completeRequest(request_id, outputFileURLs)
     receipt = build_and_send_tx(func, provider_account, private_key)
     print(f"Request {request_id} completed by Provider")
-    print_balance([provider_account], ["Provider"])
+    #print_balance([provider_account], ["Provider"])
 
 def apply_for_verification(verifier_account, private_key, request_id):
     func = market_contract.functions.applyForVerificationForRequest(request_id)
@@ -121,13 +121,13 @@ def trigger_verifier(verifier_account, private_key, request_id):
     func = market_contract.functions.chooseVerifiersForRequestTrigger(request_id)
     receipt = build_and_send_tx(func, verifier_account, private_key)
     print(f"Verifier {verifier_account.address} triggered verifier selection")
-    print_balance([verifier_account], ["Verifier"])
+    #print_balance([verifier_account], ["Verifier"])
 
 def submit_commitment(verifier_account, private_key, request_id, computed_hash):
     func = market_contract.functions.submitCommitment(request_id, computed_hash)
     receipt = build_and_send_tx(func, verifier_account, private_key)
     print(f"Verifier {verifier_account.address} submitted commitment")
-    print_balance([verifier_account], ["Verifier"])
+    #print_balance([verifier_account], ["Verifier"])
 
 def to_bytes32(data):
     return data.ljust(32, b'\0')[:32]
@@ -142,7 +142,7 @@ def reveal_provider_key_and_hash(provider_account, private_key, request_id, answ
     )
     receipt = build_and_send_tx(func, provider_account, private_key)
     print(f"Provider revealed key and hash for request {request_id}")
-    print_balance([provider_account], ["Provider"])
+    #print_balance([provider_account], ["Provider"])
 
 def reveal_commitment(verifier_account, private_key, request_id, agree, answer, nonce):
     func = market_contract.functions.revealCommitment(
@@ -153,7 +153,7 @@ def reveal_commitment(verifier_account, private_key, request_id, agree, answer, 
     )
     receipt = build_and_send_tx(func, verifier_account, private_key)
     print(f"Verifier {verifier_account.address} revealed commitment")
-    print_balance([verifier_account], ["Verifier"])
+    #print_balance([verifier_account], ["Verifier"])
 
 def calculate_majority_and_reward(provider_account, private_key, request_id, round_num):
     func = market_contract.functions.calculateMajorityAndReward(request_id, round_num)
@@ -168,10 +168,6 @@ if __name__ == "__main__":
     verifier_accounts = [web3.eth.account.from_key(key) for key in metamask_private_keys[2:]]
 
     all_accounts = [consumer_account, provider_account] + verifier_accounts
-
-    round_number = 0
-    provider_key = f"{round_number:08x}"
-    reveal_provider_key_and_hash(provider_account, provider_account.key, 10, "answer hash", "0x48656c6c6f20576f726c64")
 
     print_balance(all_accounts, ["Consumer", "Provider", "Verifier1", "Verifier2", "Verifier3", "Verifier4", "Verifier5"])
 
@@ -206,6 +202,8 @@ if __name__ == "__main__":
         for verifier_account in verifier_accounts:
             approve_tokens(market_contract_address, 500 * 10**18, verifier_account, verifier_account.key)
             apply_for_verification(verifier_account, verifier_account.key, request_id)
+        
+        for verifier_account in verifier_accounts:
             trigger_verifier(verifier_account, verifier_account.key, request_id)
 
         # Submit commitments
@@ -231,7 +229,8 @@ if __name__ == "__main__":
         time.sleep(10)  # Simulate time passing
 
         # Calculate majority and reward
-        calculate_majority_and_reward(provider_account, provider_account.key, request_id, round_number)
+        for verifier_account in verifier_accounts:
+            calculate_majority_and_reward(verifier_account, verifier_account.key, request_id, round_number)
 
         # Print balances at the end of each round
         print(f"Balances after round {round_number + 1}:")

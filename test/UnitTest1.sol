@@ -37,7 +37,7 @@ contract ComputationMarketTest is Test {
     uint256 verificationDeadline = 2 days;
     uint256 timeAllocatedForVerification = 1 hours;
     uint256 numVerifiersSampleSize = 3; // For testing purposes
-    uint256 constant PROVIDER_STAKE_PERCENTAGE = 10;
+    uint256 constant PROVIDER_STAKE_PERCENTAGE = 50;
 
     function setUp() public {
         // Deploy the mock COMP token and the market contract
@@ -95,7 +95,9 @@ contract ComputationMarketTest is Test {
             timeAllocatedForVerification,
             numVerifiersSampleSize,
             1,
-            1000
+            1000,
+            bytes32(0),
+            paymentForProvider * PROVIDER_STAKE_PERCENTAGE / 100
         );
         vm.stopPrank();
     }
@@ -116,9 +118,8 @@ contract ComputationMarketTest is Test {
         vm.startPrank(provider);
         string[] memory outputFileURLs = new string[](1);
         outputFileURLs[0] = "output_file_url";
-        market.alertVerifiersOfCompletedRequest(0);
-        vm.warp(block.timestamp + 3);
         market.completeRequest(0, outputFileURLs);
+        vm.warp(block.timestamp + 6);
         vm.stopPrank();
     }
 
@@ -143,7 +144,7 @@ contract ComputationMarketTest is Test {
 
     function revealProviderKeyAndHash(bytes32 privateKey, bytes32 answerHash) internal {
         vm.startPrank(provider);
-        market.revealProviderKeyAndHash(0, privateKey, answerHash);
+        market.revealProviderKeyAndHash(0, keccak256(abi.encodePacked(privateKey, bytes32(block.timestamp))), answerHash);
         vm.stopPrank();
     }
 
@@ -168,7 +169,7 @@ contract ComputationMarketTest is Test {
 
         bytes32 privateKey = keccak256(abi.encodePacked("private_key"));
         bytes32 answerHash = keccak256(abi.encodePacked("answer"));
-        revealProviderKeyAndHash(privateKey, answerHash);
+        revealProviderKeyAndHash(keccak256(abi.encodePacked(privateKey, bytes32(block.timestamp))), answerHash);
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
 
@@ -236,7 +237,7 @@ contract ComputationMarketTest is Test {
 
         bytes32 privateKey = keccak256(abi.encodePacked("private_key"));
         bytes32 answerHash = keccak256(abi.encodePacked("correct_answer"));
-        revealProviderKeyAndHash(privateKey, answerHash);
+        revealProviderKeyAndHash(keccak256(abi.encodePacked(privateKey, bytes32(block.timestamp))), answerHash);
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
 
@@ -286,7 +287,7 @@ contract ComputationMarketTest is Test {
 
         bytes32 privateKey = keccak256(abi.encodePacked("private_key"));
         bytes32 answerHash = keccak256(abi.encodePacked("correct_answer"));
-        revealProviderKeyAndHash(privateKey, answerHash);
+        revealProviderKeyAndHash(keccak256(abi.encodePacked(privateKey, bytes32(block.timestamp))), answerHash);
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
 
@@ -336,7 +337,7 @@ contract ComputationMarketTest is Test {
 
         bytes32 privateKey = keccak256(abi.encodePacked("private_key"));
         bytes32 answerHash = keccak256(abi.encodePacked("answer1"));
-        revealProviderKeyAndHash(privateKey, answerHash);
+        revealProviderKeyAndHash(keccak256(abi.encodePacked(privateKey, bytes32(block.timestamp))), answerHash);
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
 
@@ -383,7 +384,7 @@ contract ComputationMarketTest is Test {
 
         bytes32 privateKey = keccak256(abi.encodePacked("private_key"));
         bytes32 answerHash = keccak256(abi.encodePacked("answer"));
-        revealProviderKeyAndHash(privateKey, answerHash);
+        revealProviderKeyAndHash(keccak256(abi.encodePacked(privateKey, bytes32(block.timestamp))), answerHash);
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
 

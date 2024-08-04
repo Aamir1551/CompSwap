@@ -4,7 +4,7 @@ import time
 
 # Configuration
 arbitrum_sepolia_rpc_url = "https://sepolia-rollup.arbitrum.io/rpc"
-market_contract_address = "0x20Cb5CfC1c68695778384185540b100689064d05"
+market_contract_address = "0x178Ad076e22C19bFd814B35A9E4ebb5eb13f34b4"
 
 # Load ABI from file
 with open('ComputationMarketABI.json', 'r') as abi_file:

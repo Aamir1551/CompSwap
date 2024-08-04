@@ -4,13 +4,14 @@ import time
 from datetime import datetime, timedelta
 from web3.exceptions import ContractLogicError
 import eth_abi
+import random
 
 # Configuration
 arbitrum_sepolia_rpc_url = "https://sepolia-rollup.arbitrum.io/rpc"
-market_contract_address = "0x20Cb5CfC1c68695778384185540b100689064d05"
-comp_token_contract_address = "0x01778E1F4c04dC85049459d311B2091f58539ff1"
+market_contract_address = "0x178Ad076e22C19bFd814B35A9E4ebb5eb13f34b4"
+comp_token_contract_address = "0x5d9aD2c556f2C50Ba1ce346bc2b7741c6387d055"
 
-with open('private_keys.json', 'r') as file:
+with open('./../private_keys.json', 'r') as file:
     keys = json.load(file)
 
 metamask_private_keys = [
@@ -72,13 +73,11 @@ def approve_tokens(spender_address, amount, account, private_key):
     func = comp_token_contract.functions.approve(spender_address, amount)
     receipt = build_and_send_tx(func, account, private_key)
     print(f"{account.address} approved {amount} tokens for {spender_address}")
-    #print_balance([account], ["Account"])
 
 def transfer_tokens(to_account, amount, from_account, private_key):
     func = comp_token_contract.functions.transfer(to_account.address, amount)
     receipt = build_and_send_tx(func, from_account, private_key)
     print(f"Transferred {amount} tokens from {from_account.address} to {to_account.address}")
-    #print_balance([from_account, to_account], ["Sender", "Recipient"])
 
 def create_request(account, private_key):
     func = market_contract.functions.createRequest(
@@ -113,7 +112,6 @@ def complete_request(provider_account, private_key, request_id, outputFileURLs):
     func = market_contract.functions.completeRequest(request_id, outputFileURLs)
     receipt = build_and_send_tx(func, provider_account, private_key)
     print(f"Request {request_id} completed by Provider")
-    #print_balance([provider_account], ["Provider"])
 
 def apply_for_verification(verifier_account, private_key, request_id):
     func = market_contract.functions.applyForVerificationForRequest(request_id)
@@ -125,38 +123,34 @@ def trigger_verifier(verifier_account, private_key, request_id):
     func = market_contract.functions.chooseVerifiersForRequestTrigger(request_id)
     receipt = build_and_send_tx(func, verifier_account, private_key)
     print(f"Verifier {verifier_account.address} triggered verifier selection")
-    #print_balance([verifier_account], ["Verifier"])
 
 def submit_commitment(verifier_account, private_key, request_id, computed_hash):
     func = market_contract.functions.submitCommitment(request_id, computed_hash)
     receipt = build_and_send_tx(func, verifier_account, private_key)
     print(f"Verifier {verifier_account.address} submitted commitment")
-    #print_balance([verifier_account], ["Verifier"])
 
 def to_bytes32(data):
     return data.ljust(32, b'\0')[:32]
-def reveal_provider_key_and_hash(provider_account, private_key, request_id, answer, provider_key):
+def reveal_provider_key_and_hash(provider_account, private_key, request_id, answer, privateKeyRand, initialisationVecRand):
     answer_hash = web3.keccak(text=answer).hex()
     func = market_contract.functions.revealProviderKeyAndHash(
         request_id,
-        #web3.to_bytes(hexstr=provider_key),
-        to_bytes32(Web3.to_bytes(hexstr=provider_key)),
-        #to_bytes32(Web3.to_bytes(hexstr=answer_hash))
+        privateKeyRand,
+        initialisationVecRand,
         web3.to_bytes(hexstr=answer_hash)
     )
     receipt = build_and_send_tx(func, provider_account, private_key)
     print(f"Provider revealed key and hash for request {request_id}")
-    #print_balance([provider_account], ["Provider"])
 
 
 # add a bunch of stupid emit statements to figure out where it's failing
 # also write out the rest of the functions in a better way. maybe make a owner contract, and a sepearte contract to act as a consumer
-def reveal_commitment(verifier_account, private_key, request_id, agree, answer, nonce):
+def reveal_commitment(verifier_account, private_key, request_id, agree, answerHash, nonce):
     try:
         func = market_contract.functions.revealCommitment(
             request_id,
             agree,
-            web3.keccak(text=answer),
+            answerHash,
             web3.to_bytes(hexstr=nonce)
         )
         tx = func.build_transaction({
@@ -191,11 +185,11 @@ def reveal_commitment(verifier_account, private_key, request_id, agree, answer, 
     except ContractLogicError as e:
         print(f"Transaction reverted with error: {str(e)}")
 
-def calculate_majority_and_reward(provider_account, private_key, request_id, round_num):
+def calculate_majority_and_reward(verifierAccount, private_key, request_id, round_num):
     func = market_contract.functions.calculateMajorityAndReward(request_id, round_num)
-    receipt = build_and_send_tx(func, provider_account, private_key)
-    print(f"Provider calculated majority and reward for request {request_id}, round {round_num}")
-    print_balance([provider_account], ["Provider"])
+    receipt = build_and_send_tx(func, verifierAccount, private_key)
+    print(f"Verifier {verifierAccount.address} calculated majority and reward for {request_id}, round {round_num}")
+    print_balance([verifier_account], ["Provider"])
 
 # Main function
 if __name__ == "__main__":
@@ -207,9 +201,7 @@ if __name__ == "__main__":
     reveal_commitment(verifier_accounts[0], verifier_accounts[0].key, 1, True, "answer", nonce.hex())
     all_accounts = [consumer_account, provider_account] + verifier_accounts
 
-
     print_balance(all_accounts, ["Consumer", "Provider", "Verifier1", "Verifier2", "Verifier3", "Verifier4", "Verifier5"])
-
 
     # Approve tokens for consumer
     approve_tokens(market_contract_address, 500 * 10**18, consumer_account, consumer_account.key)
@@ -247,26 +239,20 @@ if __name__ == "__main__":
             trigger_verifier(verifier_account, verifier_account.key, request_id)
 
         # Submit commitments
-        answer = "hashed_answer"
+        answerHash = web3.keccak("hashed_answer")
         for verifier_account in verifier_accounts:
             nonce = web3.keccak(text=f"nonce_{verifier_account.address}")
-            computed_hash = web3.keccak(text=f"{answer}{nonce.hex()}{verifier_account.address}")
+            computed_hash = web3.keccak(text=f"{answerHash}{nonce.hex()}{verifier_account.address}")
             submit_commitment(verifier_account, verifier_account.key, request_id, computed_hash)
 
-        time.sleep(10)  # Simulate time passing
-
-        # Reveal provider key and hash
-        provider_key = f"{round_number:08x}"
-        reveal_provider_key_and_hash(provider_account, provider_account.key, request_id, answer, provider_key)
-
-        time.sleep(8)  # Simulate time passing
+        provider_key = random.randint(0, 10000)
+        initialisationVector = random.randint(0, 10000)
+        reveal_provider_key_and_hash(provider_account, provider_account.key, request_id, answerHash, provider_key, initialisationVector)
 
         # Reveal commitments
         for verifier_account in verifier_accounts:
             nonce = web3.keccak(text=f"nonce_{verifier_account.address}")
-            reveal_commitment(verifier_account, verifier_account.key, request_id, True, answer, nonce.hex())
-
-        time.sleep(10)  # Simulate time passing
+            reveal_commitment(verifier_account, verifier_account.key, request_id, True, answerHash, nonce.hex())
 
         # Calculate majority and reward
         for verifier_account in verifier_accounts:

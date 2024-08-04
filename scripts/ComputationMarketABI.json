@@ -14,7 +14,7 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
+                "indexed": true,
                 "internalType": "uint256",
                 "name": "requestId",
                 "type": "uint256"
@@ -42,9 +42,34 @@
                 "internalType": "uint256",
                 "name": "timeAllocatedForVerification",
                 "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "numVerifiers",
+                "type": "uint256"
             }
         ],
         "name": "AlertVerifiers",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "indexedrequestId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "roundNum",
+                "type": "uint256"
+            }
+        ],
+        "name": "AllCommitmentsRevealed",
         "type": "event"
     },
     {
@@ -153,9 +178,15 @@
             },
             {
                 "indexed": false,
-                "internalType": "bytes32",
+                "internalType": "uint256",
                 "name": "privateKey",
-                "type": "bytes32"
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "initialisationVector",
+                "type": "uint256"
             },
             {
                 "indexed": false,
@@ -868,6 +899,26 @@
                         "internalType": "bytes32",
                         "name": "mainProviderAnswerHash",
                         "type": "bytes32"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "commitsSubmitted",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "commitsRevealed",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "providerPrivateKey",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "providerInitialisationVector",
+                        "type": "uint256"
                     }
                 ],
                 "internalType": "struct ComputationMarket.RoundDetailsOutput",
@@ -955,6 +1006,107 @@
                 "internalType": "uint256",
                 "name": "requestId",
                 "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "roundIndex",
+                "type": "uint256"
+            }
+        ],
+        "name": "getVerifiersAppliedForRound",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "roundIndex",
+                "type": "uint256"
+            }
+        ],
+        "name": "getVerifiersChosenForRound",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "roundIndex",
+                "type": "uint256"
+            }
+        ],
+        "name": "getVerifiersTriggeredForRound",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "roundIndex",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "voteHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "getVoteCountForHashForRound",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
             }
         ],
         "name": "providerFailure",
@@ -970,9 +1122,9 @@
                 "type": "uint256"
             },
             {
-                "internalType": "bytes32",
+                "internalType": "uint256",
                 "name": "",
-                "type": "bytes32"
+                "type": "uint256"
             }
         ],
         "name": "providerPrivateKeys",
@@ -1228,9 +1380,14 @@
                 "type": "uint256"
             },
             {
-                "internalType": "bytes32",
+                "internalType": "uint256",
                 "name": "privateKey",
-                "type": "bytes32"
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "initialisationVector",
+                "type": "uint256"
             },
             {
                 "internalType": "bytes32",
@@ -1302,6 +1459,26 @@
                 "internalType": "bytes32",
                 "name": "mainProviderAnswerHash",
                 "type": "bytes32"
+            },
+            {
+                "internalType": "uint256",
+                "name": "commitsSubmitted",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "commitsRevealed",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "providerPrivateKey",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "providerInitialisationVector",
+                "type": "uint256"
             }
         ],
         "stateMutability": "view",
@@ -1316,19 +1493,6 @@
             }
         ],
         "name": "selectRequest",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            }
-        ],
-        "name": "startNextRound",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

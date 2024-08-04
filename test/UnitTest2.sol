@@ -140,7 +140,8 @@ contract ComputationMarketTest is Test {
 
     function revealProviderKeyAndHash(bytes32 privateKey, bytes32 answerHash) internal {
         vm.startPrank(provider);
-        market.revealProviderKeyAndHash(0, keccak256(abi.encodePacked(privateKey, bytes32(block.timestamp))), answerHash);
+        uint256 initialisationVector = block.timestamp;
+        market.revealProviderKeyAndHash(0, block.timestamp, initialisationVector, answerHash);
         vm.stopPrank();
     }
 
@@ -502,4 +503,111 @@ contract ComputationMarketTest is Test {
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));
     }
+
+    function testMultipleRoundsWithVerifierSamplingWithoutTimeWarps() public {
+        completeTestRequest();
+
+        address[] memory verifiers = new address[](5);
+        bytes32[] memory answers = new bytes32[](5);
+        bool[] memory agreements = new bool[](5);
+
+        verifiers[0] = verifier1;
+        verifiers[1] = verifier2;
+        verifiers[2] = verifier3;
+        verifiers[3] = verifier4;
+        verifiers[4] = verifier5;
+
+        // Round 1
+        answers[0] = keccak256(abi.encodePacked("answer"));
+        answers[1] = keccak256(abi.encodePacked("answer"));
+        answers[2] = keccak256(abi.encodePacked("wrong_answer"));
+        answers[3] = keccak256(abi.encodePacked("answer"));
+        answers[4] = keccak256(abi.encodePacked("answer"));
+        agreements[0] = true;
+        agreements[1] = true;
+        agreements[2] = false;
+        agreements[3] = true;
+        agreements[4] = true;
+        performRoundWithVerifiers(verifiers, answers, agreements, true, 1);
+
+        // Round 2
+        answers[0] = keccak256(abi.encodePacked("answer"));
+        answers[1] = keccak256(abi.encodePacked("answer"));
+        answers[2] = keccak256(abi.encodePacked("wrong_answer"));
+        answers[3] = keccak256(abi.encodePacked("answer"));
+        answers[4] = keccak256(abi.encodePacked("answer"));
+        agreements[0] = true;
+        agreements[1] = true;
+        agreements[2] = false;
+        agreements[3] = true;
+        agreements[4] = true;
+        performRoundWithVerifiers(verifiers, answers, agreements, true, 2);
+
+        // Round 3
+        answers[0] = keccak256(abi.encodePacked("answer"));
+        answers[1] = keccak256(abi.encodePacked("answer"));
+        answers[2] = keccak256(abi.encodePacked("wrong_answer"));
+        answers[3] = keccak256(abi.encodePacked("answer"));
+        answers[4] = keccak256(abi.encodePacked("answer"));
+        agreements[0] = true;
+        agreements[1] = true;
+        agreements[2] = false;
+        agreements[3] = true;
+        agreements[4] = true;
+        performRoundWithVerifiersWithoutTimeWarps(verifiers, answers, agreements, true, 3);
+
+        ComputationMarket.Request memory request = market.getRequestDetails(0);
+        assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.SUCCESS));
+    }
+
+    function performRoundWithVerifiersWithoutTimeWarps(address[] memory verifiers, bytes32[] memory answers, bool[] memory agreements, bool majorityExpected, uint256 roundNum) internal {
+        // Apply for verification
+        for (uint256 i = 0; i < verifiers.length; i++) {
+            applyForVerification(verifiers[i]);
+        }
+
+        // Trigger verification
+        for (uint256 i = 0; i < verifiers.length; i++) {
+            triggerVerification(verifiers[i]);
+        }
+
+        // Fetch the chosen verifiers from the request structure
+        ComputationMarket.Request memory request = market.getRequestDetails(0);
+        address[] memory chosenVerifiers = request.chosenVerifiers;
+
+        // Submit commitment for the chosen verifiers
+        for (uint256 i = 0; i < chosenVerifiers.length; i++) {
+            uint256 verifierIndex = findVerifierIndex(chosenVerifiers[i], verifiers);
+            bytes32 computedHash = keccak256(abi.encodePacked(answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)), chosenVerifiers[i]));
+            submitCommitment(chosenVerifiers[i], computedHash);
+        }
+
+        // Provider reveals the key and hash
+        bytes32 privateKey = keccak256(abi.encodePacked("private_key"));
+        bytes32 answerHash = answers[0];
+        revealProviderKeyAndHash(privateKey, answerHash);
+
+        // Reveal commitment for the chosen verifiers
+        for (uint256 i = 0; i < chosenVerifiers.length; i++) {
+            uint256 verifierIndex = findVerifierIndex(chosenVerifiers[i], verifiers);
+            vm.startPrank(chosenVerifiers[i]);
+            market.revealCommitment(0, agreements[verifierIndex], answers[verifierIndex], keccak256(abi.encodePacked("nonce", verifierIndex)));
+            vm.stopPrank();
+        }
+
+        allVerifiersCollectRewards(0, roundNum);
+        vm.stopPrank();
+
+        ComputationMarket.Request memory requestUpdated = market.getRequestDetails(0);
+        if (majorityExpected) {
+            if(requestUpdated.layerComputeIndex == requestUpdated.layerCount) {
+                assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.SUCCESS));
+            } else {
+                assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS));
+            }
+        } else {
+            assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));
+        }
+    }
+
 }

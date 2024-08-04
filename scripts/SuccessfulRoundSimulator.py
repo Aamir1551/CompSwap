@@ -10,15 +10,17 @@ arbitrum_sepolia_rpc_url = "https://sepolia-rollup.arbitrum.io/rpc"
 market_contract_address = "0x20Cb5CfC1c68695778384185540b100689064d05"
 comp_token_contract_address = "0x01778E1F4c04dC85049459d311B2091f58539ff1"
 
-# Private keys for your accounts
+with open('private_keys.json', 'r') as file:
+    keys = json.load(file)
+
 metamask_private_keys = [
-    "2ae27eeaa8095f56cd7c02adddd144bdc02d67c3d2a890b7f2ee0097cd520934",  # Consumer
-    "efa61ee281826a391cb7113f644d97482903721d7bd3560c771e1b91676a435e",  # Provider
-    "1543215e1c43b0c70b7b69047f1a933b83b1e47e040e7f137bf379405b1ab136",  # Verifier1
-    "5f3a423cad7d8cf4d5c26856a0aa1d63de638db5da411eec99c85354737e41b3",  # Verifier2
-    "b239240ea6dea66c2473af62f696737e7473ab0194b5a47706d2e5b0fda54a89",  # Verifier3
-    "a697109fc85aa8c18b8e1ce76e0728d64b4803fe97155afd8f7b9f946260ebdd",  # Verifier4
-    "3d0d6ce1796a6e228b4ef274eeb3d44cbf828db5db35ac0af3dc7be11f8a54c6"   # Verifier5
+    keys["consumer"],  # Consumer
+    keys["provider"],  # Provider
+    keys["verifier1"],  # Verifier1
+    keys["verifier2"],  # Verifier2
+    keys["verifier3"],  # Verifier3
+    keys["verifier4"],  # Verifier4
+    keys["verifier5"]   # Verifier5
 ]
 
 account_roles = [

@@ -145,7 +145,8 @@ contract ComputationMarketTest is Test {
 
     function revealProviderKeyAndHash(bytes32 privateKey, bytes32 answerHash) internal {
         vm.startPrank(provider);
-        market.revealProviderKeyAndHash(0, keccak256(abi.encodePacked(privateKey, bytes32(block.timestamp))), answerHash);
+        uint256 initialisationVector = block.timestamp;
+        market.revealProviderKeyAndHash(0, uint256(keccak256(abi.encodePacked(privateKey, bytes32(block.timestamp)))), initialisationVector, answerHash);
         vm.stopPrank();
     }
 

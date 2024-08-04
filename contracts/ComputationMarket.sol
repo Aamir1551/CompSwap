@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "forge-std/console.sol";
+//import "forge-std/console.sol";
 
 contract ComputationMarket {
     IERC20 public compToken; // The ERC20 token used for payments
@@ -73,6 +73,10 @@ contract ComputationMarket {
         bytes32 majorityVoteHash; // Majority vote for the round
         uint256 majorityCount; // Majority count for the majority vote for that round
         bytes32 mainProviderAnswerHash; // The answer hash of the main provider
+        uint256 commitsSubmitted; // Number of commits provided
+        uint256 commitsRevealed; // Number of commits revealed
+        uint256 providerPrivateKey; // Private key of the provider
+        uint256 providerInitialisationVector; // Initialisation vector of the provider
     }
 
     // Structure representing the output of the getRoundDetails function
@@ -86,6 +90,10 @@ contract ComputationMarket {
         bytes32 majorityVoteHash;
         uint256 majorityCount;
         bytes32 mainProviderAnswerHash;
+        uint256 commitsSubmitted;
+        uint256 commitsRevealed;
+        uint256 providerPrivateKey;
+        uint256 providerInitialisationVector;
     }
 
     uint256 public requestCount; // Total number of requests created
@@ -140,7 +148,7 @@ contract ComputationMarket {
     event ProviderSlashed(uint256 indexed requestId, address indexed provider);
 
     // Event emitted when the provider reveals their private key and hash
-    event ProviderRevealed(uint256 indexed requestId, uint256 privateKey, bytes32 answerHash, uint256 initialisationVector);
+    event ProviderRevealed(uint256 indexed requestId, uint256 privateKey, uint256 initialisationVector, bytes32 answerHash);
 
     // Event emitted when a verifier submits their agreement or disagreement
     event VoteSubmitted(uint256 indexed requestId, address indexed verifier, bool agree);
@@ -164,8 +172,10 @@ contract ComputationMarket {
     event VerificationSelectionStarted(uint256 indexed requestId, uint256 layerComputeIndex);
 
     // Event emitted when provider alerts verifiers of a completion of request
-    event AlertVerifiers(uint256 requestId, address provider, uint256 verificationPrice, uint256 verificationDeadline, uint256 timeAllocatedForVerification);
+    event AlertVerifiers(uint256 indexed requestId, address provider, uint256 verificationPrice, uint256 verificationDeadline, uint256 timeAllocatedForVerification, uint256 numVerifiers);
 
+    // Event emitted when all commitments are revealed for a given round
+    event AllCommitmentsRevealed(uint256 indexedrequestId, uint256 indexed roundNum);
 
     constructor(address compTokenAddress) {
         require(compTokenAddress != address(0), "Invalid token address");
@@ -255,6 +265,22 @@ contract ComputationMarket {
         return uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender))) % maxLimit;
     }
 
+    function getVoteCountForHashForRound(uint256 requestId, uint256 roundIndex, bytes32 voteHash) external view returns (uint256) {
+        return roundDetails[requestId][roundIndex].votes[voteHash]; 
+    }
+
+    function getVerifiersTriggeredForRound(uint256 requestId, uint256 roundIndex) external view returns (bool) {
+        return roundDetails[requestId][roundIndex].verifiersTriggered[msg.sender]; 
+    }
+
+    function getVerifiersAppliedForRound(uint256 requestId, uint256 roundIndex) external view returns (bool) {
+        return roundDetails[requestId][roundIndex].verifiersApplied[msg.sender]; 
+    }
+
+    function getVerifiersChosenForRound(uint256 requestId, uint256 roundIndex) external view returns (bool) {
+        return roundDetails[requestId][roundIndex].verifiersChosen[msg.sender]; 
+    }
+
     function getRoundDetails(uint256 requestId, uint256 roundIndex) external view returns (RoundDetailsOutput memory) {
         RoundDetails storage roundDetailsOut = roundDetails[requestId][roundIndex];
         RoundDetailsOutput memory output = RoundDetailsOutput({
@@ -266,7 +292,12 @@ contract ComputationMarket {
             commitmentRevealEndTime : roundDetailsOut.commitmentRevealEndTime,
             majorityVoteHash : roundDetailsOut.majorityVoteHash,
             majorityCount : roundDetailsOut.majorityCount,
-            mainProviderAnswerHash : roundDetailsOut.mainProviderAnswerHash
+            mainProviderAnswerHash : roundDetailsOut.mainProviderAnswerHash,
+            commitsSubmitted: roundDetailsOut.commitsSubmitted,
+            commitsRevealed: roundDetailsOut.commitsRevealed,
+            providerPrivateKey: roundDetailsOut.providerPrivateKey,
+            providerInitialisationVector: roundDetailsOut.providerInitialisationVector
+
         });
         return output;
     }
@@ -342,7 +373,7 @@ contract ComputationMarket {
         request.verifierSelectionCount = 0;
 
         emit RoundStartedForVerificationSelection(requestId, request.layerComputeIndex);
-        emit AlertVerifiers(requestId, msg.sender, request.paymentPerRoundForVerifiers, request.verificationDeadline, request.timeAllocatedForVerification);
+        emit AlertVerifiers(requestId, msg.sender, request.paymentPerRoundForVerifiers, request.verificationDeadline, request.timeAllocatedForVerification, request.numVerifiers);
         emit RoundInitialised(requestId);
     }
 
@@ -378,8 +409,9 @@ contract ComputationMarket {
         Request storage request = requests[requestId];
         require(request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification), "Verification deadline has not yet passed");
         require(roundDetails[requestId][roundNum].verifiersApplied[msg.sender], "Verifier has either already recieved stake, or did not apply for verification");
-        
-        roundDetails[requestId][roundNum].verifiersApplied[msg.sender] = false;
+        require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "Already been paid");
+
+        verifications[requestId][roundNum][msg.sender].verifierPaid = true;
         compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
     }
 
@@ -426,7 +458,6 @@ contract ComputationMarket {
         require(request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification), "Still enough time to perform round before verification deadline");
         require(request.state == ComputationMarket.RequestStates.CHOOSING_VERIFIERS, "Request Must be in choosing verifiers state");
         require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "Already been paid");
-
         compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
         verifications[requestId][roundNum][msg.sender].verifierPaid = true;
     }
@@ -456,7 +487,6 @@ contract ComputationMarket {
         request.state = RequestStates.COMMITMENT_STATE;
     }
 
-
     // Function to submit a commitment by a verifier
     function submitCommitment(
         uint256 requestId,
@@ -471,6 +501,11 @@ contract ComputationMarket {
         require(roundDetails[requestId][request.roundIndex].verifiersTriggered[msg.sender], "You did not trigger");
 
         verification.computedHash = computedHash;
+        
+        roundDetails[requestId][request.roundIndex].commitsSubmitted++;
+        if(roundDetails[requestId][request.roundIndex].commitsSubmitted == request.numVerifiersSampleSize) {
+            request.state = RequestStates.PROVIDER_REVEAL_STATE;
+        }
 
         emit CommitmentSubmitted(requestId, msg.sender);
     }
@@ -485,14 +520,18 @@ contract ComputationMarket {
     ) external {
         Request storage request = requests[requestId];
         require(msg.sender == request.mainProvider, "Only the main provider can reveal the key and hash");
-        require(block.timestamp > roundDetails[requestId][request.roundIndex].commitEndTime, "Commitment phase not ended");
+        require(block.timestamp > roundDetails[requestId][request.roundIndex].commitEndTime ||
+            request.state == RequestStates.PROVIDER_REVEAL_STATE, "Commitment phase not ended");
         require(block.timestamp <= roundDetails[requestId][request.roundIndex].providerRevealEndTime, "Provider reveal phase ended");
         require(!providerPrivateKeys[requestId][privateKey], "Private key has already been used");
         roundDetails[requestId][request.roundIndex].mainProviderAnswerHash = keccak256(abi.encodePacked(answerHash, true));
+        roundDetails[requestId][request.roundIndex].providerInitialisationVector = initialisationVector;
+        roundDetails[requestId][request.roundIndex].providerPrivateKey = privateKey;
         providerPrivateKeys[requestId][privateKey] = true;
 
-        request.state = RequestStates.PROVIDER_REVEAL_STATE;
-        emit ProviderRevealed(requestId, privateKey, answerHash, initialisationVector);
+        request.state = RequestStates.COMMITMENT_REVEAL_STATE;
+
+        emit ProviderRevealed(requestId, privateKey, initialisationVector, answerHash);
     }
 
     function revealCommitment(
@@ -502,7 +541,8 @@ contract ComputationMarket {
         bytes32 nonce
     ) external {
         Request storage request = requests[requestId];
-        require(block.timestamp > roundDetails[requestId][request.roundIndex].providerRevealEndTime, "Provider reveal phase not ended");
+        require(block.timestamp > roundDetails[requestId][request.roundIndex].providerRevealEndTime ||
+            request.state == RequestStates.COMMITMENT_REVEAL_STATE, "Provider reveal phase not ended");
         require(block.timestamp <= roundDetails[requestId][request.roundIndex].commitmentRevealEndTime, "Reveal phase ended");
         require(roundDetails[requestId][request.roundIndex].verifiersChosen[msg.sender], "You are not the chosen verifier");
         require(roundDetails[requestId][request.roundIndex].verifiersTriggered[msg.sender], "You did not trigger");
@@ -530,24 +570,20 @@ contract ComputationMarket {
             round.majorityCount = round.votes[voteHash];
         }
 
-        request.state = RequestStates.COMMITMENT_REVEAL_STATE;
+        roundDetails[requestId][request.roundIndex].commitsRevealed++;
         emit RevealVerificationDetails(requestId, block.timestamp, msg.sender);
-    }
 
-    function startNextRound(uint256 requestId) external {
-        Request storage request = requests[requestId];
-        require(request.state == RequestStates.COMMITMENT_REVEAL_STATE, "Request not yet in commitment reveal state");
-        require(block.timestamp >= roundDetails[requestId][request.roundIndex].commitmentRevealEndTime, "commitment stage has not yet completed");
-        bytes32 majorityVoteHashForRound = roundDetails[requestId][request.roundIndex].majorityVoteHash;
-        require(roundDetails[requestId][request.roundIndex].mainProviderAnswerHash == majorityVoteHashForRound, "Provider answer hash does not match majority vote hash");
-        initialiseRound(requestId);
+        if(roundDetails[requestId][request.roundIndex].commitsRevealed == request.numVerifiersSampleSize) {
+            emit AllCommitmentsRevealed(requestId, request.roundIndex);
+        }
     }
 
     // Function to calculate the majority vote and allow msg.sender to extract reward if msg.sender vote agreed with majority of the voters
     function calculateMajorityAndReward(uint256 requestId, uint256 roundNum) public {
         Request storage request = requests[requestId];
 
-        require(block.timestamp >= roundDetails[requestId][roundNum].commitmentRevealEndTime, "commitment stage has not yet completed");
+        require(block.timestamp >= roundDetails[requestId][roundNum].commitmentRevealEndTime ||
+        roundDetails[requestId][request.roundIndex].commitsRevealed == request.numVerifiersSampleSize, "commitment stage has not yet completed");
         require(roundDetails[requestId][roundNum].verifiersChosen[msg.sender], "You are not the chosen verifier in this round");
         require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "You have already been paid for verification");
         require(roundNum <= request.roundIndex, "round num must be less than or equal to request.roundIndex");
@@ -558,6 +594,7 @@ contract ComputationMarket {
         bytes32 majorityVoteHashForRound = roundDetails[requestId][roundNum].majorityVoteHash;
         if(majorityVoteHashForRound == bytes32(0)) {
             compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
+            verifications[requestId][roundNum][msg.sender].verifierPaid = true;
             if (roundNum == request.roundIndex) {
                 initialiseRound(requestId);
             }
@@ -566,6 +603,7 @@ contract ComputationMarket {
                 
                 uint256 reward = request.paymentPerRoundForVerifiers * request.numVerifiersSampleSize / roundDetails[requestId][roundNum].votes[majorityVoteHashForRound];
                 uint256 stake = request.paymentPerRoundForVerifiers;
+                verifications[requestId][roundNum][msg.sender].verifierPaid = true;
                 compToken.transfer(msg.sender, reward + stake);
             }
             // provider doesn't match with majority vote, then provider failure
@@ -578,9 +616,8 @@ contract ComputationMarket {
                     if(request.layerComputeIndex == request.layerCount - 1) {
                         request.layerComputeIndex++;
                         providerSuccess(requestId);
-                        //providerSuccessCall(requestId);
                     }
-                    else if(roundNum == request.roundIndex && request.layerComputeIndex != request.layerCount) {
+                    else if(request.layerComputeIndex < request.layerCount) {
                         request.layerComputeIndex++;
                         initialiseRound(requestId);
                     }

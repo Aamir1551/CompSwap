@@ -174,15 +174,18 @@ contract ComputationMarketTest is Test {
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
 
         vm.startPrank(provider);
-        bytes32 privateKey = keccak256(abi.encodePacked("private_key"));
+        uint256 privateKey = block.timestamp;
+        uint256 initialisationVector = block.timestamp;
+
         bytes32 answerHash = keccak256(abi.encodePacked("answer_hash"));
-        market.revealProviderKeyAndHash(0, keccak256(abi.encodePacked(privateKey, bytes32(block.timestamp))), answerHash);
+        
+        market.revealProviderKeyAndHash(0, privateKey, initialisationVector, answerHash);
         vm.stopPrank();
 
         ComputationMarket.Request memory request = market.getRequestDetails(0);
         ComputationMarket.RoundDetailsOutput memory roundDetails = market.getRoundDetails(0, 1);
         assertEq(roundDetails.mainProviderAnswerHash, keccak256(abi.encodePacked(answerHash, true)));
-        assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.PROVIDER_REVEAL_STATE));
+        assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.COMMITMENT_REVEAL_STATE));
     }
 
     function testRevealCommitment() public {

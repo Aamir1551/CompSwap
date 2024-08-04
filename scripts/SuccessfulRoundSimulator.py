@@ -2,6 +2,8 @@ from web3 import Web3
 import json
 import time
 from datetime import datetime, timedelta
+from web3.exceptions import ContractLogicError
+import eth_abi
 
 # Configuration
 arbitrum_sepolia_rpc_url = "https://sepolia-rollup.arbitrum.io/rpc"
@@ -86,7 +88,7 @@ def create_request(account, private_key):
         "https://example.com/operations",
         int((datetime.now() + timedelta(hours=1)).timestamp()),
         int((datetime.now() + timedelta(hours=2)).timestamp()),
-        60,
+        8,
         3,
         1,
         2500,
@@ -144,16 +146,48 @@ def reveal_provider_key_and_hash(provider_account, private_key, request_id, answ
     print(f"Provider revealed key and hash for request {request_id}")
     #print_balance([provider_account], ["Provider"])
 
+
+# add a bunch of stupid emit statements to figure out where it's failing
+# also write out the rest of the functions in a better way. maybe make a owner contract, and a sepearte contract to act as a consumer
 def reveal_commitment(verifier_account, private_key, request_id, agree, answer, nonce):
-    func = market_contract.functions.revealCommitment(
-        request_id,
-        agree,
-        web3.keccak(text=answer),
-        web3.to_bytes(hexstr=nonce)
-    )
-    receipt = build_and_send_tx(func, verifier_account, private_key)
-    print(f"Verifier {verifier_account.address} revealed commitment")
-    #print_balance([verifier_account], ["Verifier"])
+    try:
+        func = market_contract.functions.revealCommitment(
+            request_id,
+            agree,
+            web3.keccak(text=answer),
+            web3.to_bytes(hexstr=nonce)
+        )
+        tx = func.build_transaction({
+            'from': verifier_account.address,
+            'nonce': web3.eth.get_transaction_count(verifier_account.address),
+            'gas': 2000000,
+            'gasPrice': web3.to_wei('5', 'gwei')
+        })
+        signed_tx = web3.eth.account.sign_transaction(tx, private_key)
+        tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        
+        print(f"Transaction hash: {web3.to_hex(tx_hash)}")
+
+        receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
+        
+        if receipt['status'] == 1:
+            print(f"Verifier {verifier_account.address} revealed commitment successfully")
+        else:
+            print(f"Transaction failed with status {receipt['status']}. Transaction hash: {web3.to_hex(tx_hash)}")
+
+            # Attempt to decode the revert reason using debug_traceTransaction
+            try:
+                trace = web3.manager.request_blocking('debug_traceTransaction', [web3.to_hex(tx_hash), {'disableMemory': True, 'disableStorage': True, 'disableStack': False}])
+                if 'error' in trace:
+                    revert_reason = trace['error']['message']
+                    print(f"Revert reason: {revert_reason}")
+                else:
+                    print("No revert reason found in the transaction trace.")
+            except Exception as decode_error:
+                print(f"Failed to trace transaction: {decode_error}")
+
+    except ContractLogicError as e:
+        print(f"Transaction reverted with error: {str(e)}")
 
 def calculate_majority_and_reward(provider_account, private_key, request_id, round_num):
     func = market_contract.functions.calculateMajorityAndReward(request_id, round_num)
@@ -167,9 +201,13 @@ if __name__ == "__main__":
     provider_account = web3.eth.account.from_key(metamask_private_keys[1])
     verifier_accounts = [web3.eth.account.from_key(key) for key in metamask_private_keys[2:]]
 
+    nonce = web3.keccak(text=f"nonce_{verifier_accounts[0].address}")
+    reveal_commitment(verifier_accounts[0], verifier_accounts[0].key, 1, True, "answer", nonce.hex())
     all_accounts = [consumer_account, provider_account] + verifier_accounts
 
+
     print_balance(all_accounts, ["Consumer", "Provider", "Verifier1", "Verifier2", "Verifier3", "Verifier4", "Verifier5"])
+
 
     # Approve tokens for consumer
     approve_tokens(market_contract_address, 500 * 10**18, consumer_account, consumer_account.key)
@@ -193,7 +231,7 @@ if __name__ == "__main__":
     # Complete request as provider (after the first round)
     outputFileURLs = ["https://example.com/output"]
     complete_request(provider_account, provider_account.key, request_id, outputFileURLs)
-    time.sleep(4)
+    time.sleep(6)
 
     for round_number in range(3):
         print(f"Starting round {round_number + 1}")
@@ -219,7 +257,7 @@ if __name__ == "__main__":
         provider_key = f"{round_number:08x}"
         reveal_provider_key_and_hash(provider_account, provider_account.key, request_id, answer, provider_key)
 
-        time.sleep(10)  # Simulate time passing
+        time.sleep(8)  # Simulate time passing
 
         # Reveal commitments
         for verifier_account in verifier_accounts:

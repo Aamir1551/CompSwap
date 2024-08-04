@@ -23,6 +23,9 @@ def handle_alert_verifiers(event):
 def handle_verification_applied(event):
     print(f"VerificationApplied event received: requestId={event['args']['requestId']}, verifier={event['args']['verifier']}, layerComputeIndex={event['args']['layerComputeIndex']}")
 
+def handle_reveal_verification_details(event):
+    print(f"RevealVerificationDetails event received: requestId={event['args']['requestId']}, endTime={event['args']['endTime']}, verifier={event['args']['verifier']}")
+
 def listen_to_events():
     latest_block = web3.eth.block_number
 
@@ -33,6 +36,7 @@ def listen_to_events():
             if new_block > latest_block:
                 alert_verifiers_events = market_contract.events.AlertVerifiers().get_logs(fromBlock=latest_block + 1, toBlock=new_block)
                 verification_applied_events = market_contract.events.VerificationApplied().get_logs(fromBlock=latest_block + 1, toBlock=new_block)
+                reveal_verification_details_events = market_contract.events.RevealVerificationDetails().get_logs(fromBlock=latest_block + 1, toBlock=new_block)
 
                 for event in alert_verifiers_events:
                     handle_alert_verifiers(event)
@@ -40,12 +44,15 @@ def listen_to_events():
                 for event in verification_applied_events:
                     handle_verification_applied(event)
 
+                for event in reveal_verification_details_events:
+                    handle_reveal_verification_details(event)
+
                 latest_block = new_block
 
-            time.sleep(1)
+            time.sleep(5)
         except Exception as e:
             print(f"An error occurred: {str(e)}")
-            time.sleep(1)
+            time.sleep(5)
 
 if __name__ == "__main__":
     listen_to_events()

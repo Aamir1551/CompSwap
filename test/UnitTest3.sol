@@ -751,4 +751,114 @@ contract ComputationMarketTest is Test {
         request = market.getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));
     }*/
+
+    function testNewProviderHolderBalanceAfterRounds() public {
+        
+        // Initial balances of Consumer and Provider
+        uint256 consumerBalanceBefore = compToken.balanceOf(consumer);
+        uint256 providerBalanceBefore = compToken.balanceOf(provider);
+
+        completeTestRequest();
+
+        // Hand over the nft to a new address
+        address newProvider = address(100);
+        vm.startPrank(provider);
+        market.compNFT().safeTransferFrom(provider, newProvider, 0);
+        vm.stopPrank();
+
+        address[] memory verifiers = new address[](7);
+        bytes32[] memory answers = new bytes32[](7);
+        bool[] memory agreements = new bool[](7);
+        uint256[] memory verifierBalances = new uint256[](7);
+
+        verifiers[0] = verifier1;
+        verifiers[1] = verifier2;
+        verifiers[2] = verifier3;
+        verifiers[3] = verifier4;
+        verifiers[4] = verifier5;
+        verifiers[5] = verifier6;
+        verifiers[6] = verifier7;
+
+        for(uint256 i=0; i<verifiers.length; i++) {
+            verifierBalances[i] = compToken.balanceOf(verifiers[i]);
+        }
+
+        // Round 1
+        answers[0] = keccak256(abi.encodePacked("answer"));
+        answers[1] = keccak256(abi.encodePacked("answer"));
+        answers[2] = keccak256(abi.encodePacked("wrong_answer"));
+        answers[3] = keccak256(abi.encodePacked("answer"));
+        answers[4] = keccak256(abi.encodePacked("answer123"));
+        answers[5] = keccak256(abi.encodePacked("answer"));
+        answers[6] = keccak256(abi.encodePacked("answer"));
+        agreements[0] = true;
+        agreements[1] = true;
+        agreements[2] = false;
+        agreements[3] = true;
+        agreements[4] = true;
+        agreements[5] = true;
+        agreements[6] = true;
+        address[] memory chosenVerifiersFromRound = performRoundWithVerifiers(verifiers, answers, agreements, true, 1);
+        checkBalancesAfterRound(verifierBalances, 1, chosenVerifiersFromRound, answers, agreements, verifiers);
+
+        for(uint256 i=0; i<verifiers.length; i++) {
+            if(compToken.balanceOf(verifiers[i]) == 0) {
+                compToken.transfer(verifiers[i], 10);
+                verifierBalances[i] = compToken.balanceOf(verifiers[i]);
+            }
+        }
+
+        // Round 2
+        answers[0] = keccak256(abi.encodePacked("answer"));
+        answers[1] = keccak256(abi.encodePacked("answer"));
+        answers[2] = keccak256(abi.encodePacked("wrong_answer"));
+        answers[3] = keccak256(abi.encodePacked("answer"));
+        answers[4] = keccak256(abi.encodePacked("answer"));
+        answers[5] = keccak256(abi.encodePacked("answer"));
+        answers[6] = keccak256(abi.encodePacked("answer"));
+        agreements[0] = true;
+        agreements[1] = true;
+        agreements[2] = false;
+        agreements[3] = true;
+        agreements[4] = true;
+        agreements[5] = true;
+        agreements[6] = true;
+        chosenVerifiersFromRound = performRoundWithVerifiers(verifiers, answers, agreements, true, 2);
+        checkBalancesAfterRound(verifierBalances, 2, chosenVerifiersFromRound, answers, agreements, verifiers);
+
+        for(uint256 i=0; i<verifiers.length; i++) {
+            if(compToken.balanceOf(verifiers[i]) == 0) {
+                compToken.transfer(verifiers[i], 10);
+                verifierBalances[i] = compToken.balanceOf(verifiers[i]);
+            }
+        }
+
+        // Round 3
+        answers[0] = keccak256(abi.encodePacked("answer"));
+        answers[1] = keccak256(abi.encodePacked("answer"));
+        answers[2] = keccak256(abi.encodePacked("wrong_answer"));
+        answers[3] = keccak256(abi.encodePacked("answer"));
+        answers[4] = keccak256(abi.encodePacked("answer"));
+        answers[5] = keccak256(abi.encodePacked("answer"));
+        answers[6] = keccak256(abi.encodePacked("answer"));
+        agreements[0] = true;
+        agreements[1] = true;
+        agreements[2] = false;
+        agreements[3] = true;
+        agreements[4] = true;
+        agreements[5] = true;
+        agreements[6] = true;
+        chosenVerifiersFromRound = performRoundWithVerifiers(verifiers, answers, agreements, true, 3);
+        checkBalancesAfterRound(verifierBalances, 3, chosenVerifiersFromRound, answers, agreements, verifiers);
+
+        ComputationMarket.Request memory request = market.getRequestDetails(0);
+        assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.SUCCESS));
+
+        // Check balance of consumer
+        assertEq(compToken.balanceOf(consumer), consumerBalanceBefore - paymentForProvider - paymentPerRoundForVerifiers * 3 * 5);
+
+        // Check balance of provider
+        assertEq(compToken.balanceOf(newProvider), paymentForProvider + request.stake);
+    }
+
 }

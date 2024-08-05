@@ -2,10 +2,26 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 //import "forge-std/console.sol";
+
+contract CompNFT is ERC721, Ownable {
+    uint256 public nextTokenId;
+
+    constructor() ERC721("COMP_NFT", "CNFT") Ownable(msg.sender) {}
+
+    function mint(address to) external onlyOwner returns (uint256) {
+        uint256 tokenId = nextTokenId;
+        _safeMint(to, tokenId);
+        nextTokenId++;
+        return tokenId;
+    }
+}
 
 contract ComputationMarket {
     IERC20 public compToken; // The ERC20 token used for payments
+    CompNFT public compNFT; // The NFT used for storing provider payments
 
     // The different states a request can be in
     enum RequestStates {NO_PROVIDER_SELECTED, PROVIDER_SELECTED_NOT_COMPUTED,
@@ -55,8 +71,22 @@ contract ComputationMarket {
         bool revealed; // Indicates if the verifier has revealed their commitment
         bytes32 computedHash; // Hash of the commitment
         bytes32 voteHash; // Hash of the vote
-        bool verifierPaid;
+        bool verifierPaid; // Indicates if the verifier has been paid
     }
+
+    struct CompNFT_Data {
+        uint256 compNFT_id; // The ID of the NFT
+        uint256 amountToPay; // Amount to be paid to the NFT Ower was request is verified
+        uint256 requestID; // The ID of the request
+        address originalProvider; // The original provider of the request
+        bool hasBeenPaid;
+    }
+
+    // Mapping of request ID to NFT struct
+    mapping(uint256 => CompNFT_Data) public providerNFTs;
+
+    // Mapping of NFT ID to request ID
+    mapping(uint256 => uint256) public NFTRequestID;
 
     struct RoundDetails {
         mapping(bytes32 => uint256) votes; // Vote tally for the round. (voteHash => number of votes)
@@ -180,6 +210,7 @@ contract ComputationMarket {
     constructor(address compTokenAddress) {
         require(compTokenAddress != address(0), "Invalid token address");
         compToken = IERC20(compTokenAddress); // Initialize the COMP token contract address
+        compNFT = new CompNFT();
     }
 
     // Function to create a new computation request
@@ -248,6 +279,7 @@ contract ComputationMarket {
             hashOfInputFiles: hashOfInputFiles
         });
         requestCount++;
+
 
         emit RequestCreated(requestCount, msg.sender);
     }
@@ -341,7 +373,19 @@ contract ComputationMarket {
 
         request.mainProvider = msg.sender;
         request.state = RequestStates.PROVIDER_SELECTED_NOT_COMPUTED;
+        
+        uint256 tokenId = compNFT.mint(msg.sender); // Mint the NFT to the provider
+        providerNFTs[tokenId] = CompNFT_Data(
+            {
+                compNFT_id: tokenId, 
+                amountToPay: request.paymentForProvider,
+                requestID: requestId, 
+                originalProvider: msg.sender, 
+                hasBeenPaid: false
+            });
 
+        NFTRequestID[tokenId] = requestId;
+        
         emit ProviderSelected(requestId, msg.sender);
     }
 
@@ -637,8 +681,14 @@ contract ComputationMarket {
         require(!request.completed, "Request is already completed");
 
         request.completed = true;
-        compToken.transfer(request.mainProvider, request.stake + request.paymentForProvider);
+
+        address toPay = compNFT.ownerOf(providerNFTs[requestId].compNFT_id);
+        providerNFTs[requestId].hasBeenPaid = true;
+        
+        compToken.transfer(toPay, request.stake + request.paymentForProvider);
+
         request.state = RequestStates.SUCCESS;
+
         emit ProviderResultSuccessfullyVerified(requestId);
     }
 
@@ -647,7 +697,11 @@ contract ComputationMarket {
         Request storage request = requests[requestId];
         require(block.timestamp >= request.verificationDeadline && request.state != RequestStates.UNSUCCESSFUL && !request.completed, "Verification Deadline has not been passed.");
         request.completed = true;
-        compToken.transfer(request.mainProvider, request.stake + request.paymentForProvider);
+
+        address toPay = compNFT.ownerOf(providerNFTs[requestId].compNFT_id);
+        providerNFTs[requestId].hasBeenPaid = true;
+
+        compToken.transfer(toPay, request.stake + request.paymentForProvider);
         request.state = RequestStates.SUCCESS;
         emit ProviderResultSuccessfullyVerified(requestId);
     }

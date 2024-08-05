@@ -7,11 +7,6 @@ import "../contracts/ComputationMarket.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-// TODO
-// 1. isn't it meant to be 2000 operations represent 1 layer? -- looks like we did 1000 even in our code, in this case, we will
-// update our protocol to 1000
-// 2. Only give users as much money as required, and not more
-
 contract MockERC20 is ERC20 {
     constructor() ERC20("Mock COMP Token", "COMP") {
         _mint(msg.sender, 1000000000000000000000000000 * 10 ** decimals());

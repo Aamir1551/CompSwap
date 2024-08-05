@@ -4,10 +4,10 @@ import time
 
 # Configuration
 arbitrum_sepolia_rpc_url = "https://sepolia-rollup.arbitrum.io/rpc"
-market_contract_address = "0x178Ad076e22C19bFd814B35A9E4ebb5eb13f34b4"
+market_contract_address = "0xa277497b26Fc332b430bF9ED50b8BD52FE77376A"
 
 # Load ABI from file
-with open('ComputationMarketABI.json', 'r') as abi_file:
+with open('../ComputationMarketABI.json', 'r') as abi_file:
     market_contract_abi = json.load(abi_file)
 
 # Connect to Arbitrum Sepolia
@@ -26,6 +26,15 @@ def handle_verification_applied(event):
 def handle_reveal_verification_details(event):
     print(f"RevealVerificationDetails event received: requestId={event['args']['requestId']}, endTime={event['args']['endTime']}, verifier={event['args']['verifier']}")
 
+def handle_provider_unsuccessful(event):
+    print(f"ProviderResultUnsuccessful event received: requestId={event['args']['requestId']}")
+
+def handle_provider_successful(event):
+    print(f"ProviderResultSuccessfullyVerified event received: requestId={event['args']['requestId']}")
+
+def handle_reveal_commitment_failed(event):
+    print(f"RevealCommitmentFailed event received: requestId={event['args']['requestId']} newHashComputed={event['args']['newHashComputed']} oldHashComputed={event['args']['oldHashComputed']}")
+
 def listen_to_events():
     latest_block = web3.eth.block_number
 
@@ -38,6 +47,11 @@ def listen_to_events():
                 verification_applied_events = market_contract.events.VerificationApplied().get_logs(fromBlock=latest_block + 1, toBlock=new_block)
                 reveal_verification_details_events = market_contract.events.RevealVerificationDetails().get_logs(fromBlock=latest_block + 1, toBlock=new_block)
 
+                provider_unsuccessful_events = market_contract.events.ProviderResultUnsuccessful().get_logs(fromBlock=latest_block + 1, toBlock=new_block)
+                provider_successful_events = market_contract.events.ProviderResultSuccessfullyVerified().get_logs(fromBlock=latest_block + 1, toBlock=new_block)
+
+                reveal_commitment_events = market_contract.events.RevealCommitmentFailed().get_logs(fromBlock=latest_block + 1, toBlock=new_block)
+
                 for event in alert_verifiers_events:
                     handle_alert_verifiers(event)
 
@@ -47,12 +61,21 @@ def listen_to_events():
                 for event in reveal_verification_details_events:
                     handle_reveal_verification_details(event)
 
+                for event in provider_unsuccessful_events:
+                    handle_provider_unsuccessful(event)
+                
+                for event in provider_successful_events:
+                    handle_provider_successful(event)
+
+                for event in reveal_commitment_events:
+                    handle_reveal_commitment_failed(event)
+
                 latest_block = new_block
 
-            time.sleep(5)
+            time.sleep(1)
         except Exception as e:
             print(f"An error occurred: {str(e)}")
-            time.sleep(5)
+            time.sleep(1)
 
 if __name__ == "__main__":
     listen_to_events()

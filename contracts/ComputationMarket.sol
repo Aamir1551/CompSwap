@@ -430,7 +430,7 @@ contract ComputationMarket {
         if(request.verifierSelectionCount < request.numVerifiersSampleSize) {
             uint256 randNum = getRandomNumber(request.numVerifiers - request.verifierSelectionCount) + request.verifierSelectionCount;
 
-            address swap1 = request.verifiers[randNum];
+            address swap1 = request.verifiers[randNum]; // Swap 1 is what we have chosen
             address swap2 = request.verifiers[request.verifierSelectionCount];
 
             request.verifiers[randNum] = swap2;
@@ -500,6 +500,7 @@ contract ComputationMarket {
         require(roundDetails[requestId][request.roundIndex].verifiersChosen[msg.sender], "You are not the chosen verifier in this round");
         require(roundDetails[requestId][request.roundIndex].verifiersTriggered[msg.sender], "You did not trigger");
 
+
         verification.computedHash = computedHash;
         
         roundDetails[requestId][request.roundIndex].commitsSubmitted++;
@@ -534,6 +535,8 @@ contract ComputationMarket {
         emit ProviderRevealed(requestId, privateKey, initialisationVector, answerHash);
     }
 
+    event RevealCommitmentFailed(uint256 requestId, bytes32 newHashComputed, bytes32 oldHashComputed);
+
     function revealCommitment(
         uint256 requestId,
         bool agree,
@@ -550,6 +553,7 @@ contract ComputationMarket {
         Verification storage verification = verifications[requestId][request.roundIndex][msg.sender];
         require(!verification.revealed, "Commitment already revealed");
         require(keccak256(abi.encodePacked(answer, nonce, msg.sender)) == verification.computedHash, "Invalid reveal values");
+
         bytes32 voteHash = keccak256(abi.encodePacked(answer, agree));
 
         verification.agree = agree;
@@ -583,7 +587,7 @@ contract ComputationMarket {
         Request storage request = requests[requestId];
 
         require(block.timestamp >= roundDetails[requestId][roundNum].commitmentRevealEndTime ||
-        roundDetails[requestId][request.roundIndex].commitsRevealed == request.numVerifiersSampleSize, "commitment stage has not yet completed");
+        roundDetails[requestId][roundNum].commitsRevealed == request.numVerifiersSampleSize, "commitment stage has not yet completed");
         require(roundDetails[requestId][roundNum].verifiersChosen[msg.sender], "You are not the chosen verifier in this round");
         require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "You have already been paid for verification");
         require(roundNum <= request.roundIndex, "round num must be less than or equal to request.roundIndex");

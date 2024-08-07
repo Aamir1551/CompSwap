@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 contract ComputationMarketTest is Test {
     ComputationMarket public market;
     COMPToken public compToken;
+    //CompNFT public compNFT;
 
     address consumer = address(1);
     address provider = address(2);
@@ -35,7 +36,9 @@ contract ComputationMarketTest is Test {
     function setUp() public {
         // Deploy the mock COMP token and the market contract
         compToken = new COMPToken(100000);
+        //compNFT = new CompNFT();
         market = new ComputationMarket(address(compToken));
+        //compNFT.transferNFTContractOwnership(address(market));
 
         // Distribute COMP tokens to test accounts
         distributeTokens();
@@ -752,7 +755,7 @@ contract ComputationMarketTest is Test {
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));
     }*/
 
-    function testNewProviderHolderBalanceAfterRounds() public {
+    /*function testNewProviderHolderBalanceAfterRounds() public {
         
         // Initial balances of Consumer and Provider
         uint256 consumerBalanceBefore = compToken.balanceOf(consumer);
@@ -859,6 +862,6 @@ contract ComputationMarketTest is Test {
 
         // Check balance of provider
         assertEq(compToken.balanceOf(newProvider), paymentForProvider + request.stake);
-    }
+    }*/
 
 }

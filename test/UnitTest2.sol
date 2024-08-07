@@ -11,6 +11,7 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 contract ComputationMarketTest is Test {
     ComputationMarket public market;
     COMPToken public compToken;
+    CompNFT public compNFT;
 
     address consumer = address(1);
     address provider = address(2);
@@ -34,7 +35,9 @@ contract ComputationMarketTest is Test {
     function setUp() public {
         // Deploy the mock COMP token and the market contract
         compToken = new COMPToken(1000000000000000000000000000 * 10 ** 18);
+        //compNFT = new CompNFT();
         market = new ComputationMarket(address(compToken));
+        //compNFT.transferNFTContractOwnership(address(market));
 
         // Distribute COMP tokens to test accounts
         distributeTokens();

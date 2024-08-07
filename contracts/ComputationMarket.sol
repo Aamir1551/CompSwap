@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -17,11 +17,22 @@ contract CompNFT is ERC721, Ownable {
         nextTokenId++;
         return tokenId;
     }
+
+    function transferNFTContractOwnership(address newOwner) external onlyOwner {
+        transferOwnership(newOwner);
+    }
+}
+
+contract HandlerFunctionsCompMarket {
+    function defaultVerifierVoteCounts(address add) external pure returns (uint256) {
+        return add != address(0) ? 1 : 0;
+    }
 }
 
 contract ComputationMarket {
-    IERC20 public compToken; // The ERC20 token used for payments
-    CompNFT public compNFT; // The NFT used for storing provider payments
+    IERC20 public immutable compToken; // The ERC20 token used for payments
+    //CompNFT public immutable compNFT; // The NFT used for storing provider payments
+    HandlerFunctionsCompMarket public immutable handlerFunctions;
 
     // The different states a request can be in
     enum RequestStates {NO_PROVIDER_SELECTED, PROVIDER_SELECTED_NOT_COMPUTED,
@@ -74,19 +85,13 @@ contract ComputationMarket {
         bool verifierPaid; // Indicates if the verifier has been paid
     }
 
-    struct CompNFT_Data {
+    /*struct CompNFT_Data {
         uint256 compNFT_id; // The ID of the NFT
         uint256 amountToPay; // Amount to be paid to the NFT Ower was request is verified
         uint256 requestID; // The ID of the request
         address originalProvider; // The original provider of the request
         bool hasBeenPaid;
-    }
-
-    // Mapping of request ID to NFT struct
-    mapping(uint256 => CompNFT_Data) public providerNFTs;
-
-    // Mapping of NFT ID to request ID
-    mapping(uint256 => uint256) public NFTRequestID;
+    }*/
 
     struct RoundDetails {
         mapping(bytes32 => uint256) votes; // Vote tally for the round. (voteHash => number of votes)
@@ -127,7 +132,6 @@ contract ComputationMarket {
     }
 
     uint256 public requestCount; // Total number of requests created
-    uint256 public constant MIN_VERIFIERS = 3; // Minimum number of verifiers required
     
     // Mapping of request ID to Request struct
     mapping(uint256 => Request) public requests; 
@@ -140,6 +144,21 @@ contract ComputationMarket {
 
     // List of private keys used for a request by the provider. Mapping of request ID and private key to whether it is used
     mapping(uint256 => mapping(uint256 => bool)) public providerPrivateKeys;
+
+    // Mapping of request ID to NFT struct
+    //mapping(uint256 => CompNFT_Data) public providerNFTs;
+
+    // Mapping of NFT ID to request ID
+    //mapping(uint256 => uint256) public NFTRequestID;
+
+    // Mapping of number of requests successfully completed by provider
+    //mapping(address => uint256) public providerSuccessfulRequestCount;
+
+    // Mapping of number of requests failed by provider
+    //mapping(address => uint256) public providerFailedRequestCount;
+
+    // Mapping of number of requests picked up by provider
+    //mapping(address => uint256) public providerPickedUpRequestCount;
 
     // Event emitted when a new request is created
     event RequestCreated(uint256 indexed requestId, address indexed consumer);
@@ -209,12 +228,14 @@ contract ComputationMarket {
 
     constructor(address compTokenAddress) {
         require(compTokenAddress != address(0), "Invalid token address");
+        //require(compNFTAddress != address(0), "Invalid token address");
         compToken = IERC20(compTokenAddress); // Initialize the COMP token contract address
-        compNFT = new CompNFT();
+        //compNFT = CompNFT(compNFTAddress);
+        handlerFunctions = new HandlerFunctionsCompMarket();
     }
 
     // Function to create a new computation request
-    function createRequest(
+    function createRequestWithAllowedVerifiers(
         uint256 paymentForProvider, 
         uint256 paymentPerRoundForVerifiers, 
         uint256 numOperations, 
@@ -228,23 +249,23 @@ contract ComputationMarket {
         uint256 protocolVersion,
         uint256 layerSize,
         bytes32 hashOfInputFiles,
-        uint256 stake
-    ) external {
+        uint256 stake,
+        function(address) external view returns (uint256) verifierVoteCount
+    ) public {
         uint256 layerCount = (numOperations + layerSize - 1) / layerSize;
         uint256 totalPaymentForVerifiers = paymentPerRoundForVerifiers * numVerifiersSampleSize * layerCount;
         uint256 totalPayment = paymentForProvider + totalPaymentForVerifiers;
-
-        require(numVerifiers >= MIN_VERIFIERS, "At least 3 verifiers required");
 
         uint256 allowance = compToken.allowance(msg.sender, address(this));
         uint256 balance = compToken.balanceOf(msg.sender);
         require(allowance >= totalPayment, "Insufficient allowance available to conduct request");
         require(balance >= totalPayment, "Insufficient balance available to conduct request");
-        require(compToken.transferFrom(msg.sender, address(this), totalPayment), "Payment failed");
 
         require(computationDeadline > block.timestamp, "Computational deadline must be greater than the current time");
         require(verificationDeadline > computationDeadline + layerCount * (timeAllocatedForVerification * 3), "Verification deadline must be sufficient enough for all rounds required");
         require(numVerifiers >= numVerifiersSampleSize, "Not enough verifiers to choose from. numVerifiers must be greater than numVerifiersSampleSize");
+
+        requestVerifierVoteCounts[requestCount] = verifierVoteCount;
 
         requests[requestCount] = Request({
             consumer: msg.sender,
@@ -280,9 +301,47 @@ contract ComputationMarket {
         });
         requestCount++;
 
-
+        require(compToken.transferFrom(msg.sender, address(this), totalPayment), "Payment failed");
         emit RequestCreated(requestCount, msg.sender);
     }
+
+    // Mapping of request ID to allowed verifier function handle
+    mapping(uint256 => function(address) external view returns (uint256)) requestVerifierVoteCounts;
+
+    function createRequest (
+        uint256 paymentForProvider, 
+        uint256 paymentPerRoundForVerifiers, 
+        uint256 numOperations, 
+        uint256 numVerifiers, 
+        string[] memory inputFileURLs, 
+        string memory operationFileURL, 
+        uint256 computationDeadline, 
+        uint256 verificationDeadline, 
+        uint256 timeAllocatedForVerification,
+        uint256 numVerifiersSampleSize,
+        uint256 protocolVersion,
+        uint256 layerSize,
+        bytes32 hashOfInputFiles,
+        uint256 stake) external {
+            createRequestWithAllowedVerifiers(
+                paymentForProvider, 
+                paymentPerRoundForVerifiers, 
+                numOperations, 
+                numVerifiers, 
+                inputFileURLs, 
+                operationFileURL, 
+                computationDeadline, 
+                verificationDeadline,
+                timeAllocatedForVerification,
+                numVerifiersSampleSize,
+                protocolVersion,
+                layerSize,
+                hashOfInputFiles,
+                stake,
+                handlerFunctions.defaultVerifierVoteCounts
+            );
+        }
+
 
     // Function to get request details
     function getRequestDetails(uint256 requestId) external view returns (Request memory) {
@@ -342,17 +401,17 @@ contract ComputationMarket {
         require(msg.sender == request.consumer, "Only the consumer can withdraw funds");
         require(!request.completed, "Request already completed");
         if(request.mainProvider == address(0)) {
-            compToken.transfer(request.consumer, request.totalPayment);
             request.completed = true;
             request.state = RequestStates.CANCELLED;
+            require(compToken.transfer(request.consumer, request.totalPayment), "Error with Market. Failed to transfer");
             emit RequestCancelled(requestId);
             return;
         }
         require(request.computationDeadline < block.timestamp && !request.hasBeenComputed, "Computation deadline has not yet been reached");
         uint256 refundAmount = request.totalPayment + request.stake;
-        compToken.transfer(request.consumer, refundAmount);
         request.completed = true;
         request.state = RequestStates.CANCELLED;
+        require(compToken.transfer(request.consumer, refundAmount), "Error with Market. Failed to transfer");
         emit RequestCancelled(requestId);
     }
 
@@ -369,12 +428,12 @@ contract ComputationMarket {
         require(allowance >= stakeAmount, "Insufficient stake");
         require(balance >= stakeAmount, "Insufficient stake");
 
-        require(compToken.transferFrom(msg.sender, address(this), stakeAmount), "Insufficient stake");
-
         request.mainProvider = msg.sender;
         request.state = RequestStates.PROVIDER_SELECTED_NOT_COMPUTED;
         
-        uint256 tokenId = compNFT.mint(msg.sender); // Mint the NFT to the provider
+        //providerPickedUpRequestCount[msg.sender]++;
+
+        /*uint256 tokenId = compNFT.mint(msg.sender); // Mint the NFT to the provider
         providerNFTs[tokenId] = CompNFT_Data(
             {
                 compNFT_id: tokenId, 
@@ -384,8 +443,9 @@ contract ComputationMarket {
                 hasBeenPaid: false
             });
 
-        NFTRequestID[tokenId] = requestId;
-        
+        NFTRequestID[tokenId] = requestId;*/
+
+        require(compToken.transferFrom(msg.sender, address(this), stakeAmount), "Insufficient stake");
         emit ProviderSelected(requestId, msg.sender);
     }
 
@@ -400,8 +460,8 @@ contract ComputationMarket {
 
         request.firstinitialisedTime = block.timestamp; // First time when the request was initialised
         initialiseRound(requestId);
-        
         emit RequestCompletedByProvider(requestId, msg.sender);
+        
     }
 
     // Function to initialise a round, and empty all verifiers/chosen verifier lists 
@@ -424,6 +484,7 @@ contract ComputationMarket {
     // Function for verifiers to apply for verification
     function applyForVerificationForRequest(uint256 requestId) external {
         Request storage request = requests[requestId];
+        require(requestVerifierVoteCounts[requestId](msg.sender) > 0, "msg.sender is not allowed to apply for verification");
         require(block.timestamp >= request.firstinitialisedTime + 5, "Must wait 5 seconds before verifiers can apply");
         require(request.hasBeenComputed, "Request not yet computed");
         require(msg.sender != request.mainProvider, "The main provider cannot apply to become a verifier");
@@ -434,18 +495,18 @@ contract ComputationMarket {
         uint256 balance = compToken.balanceOf(msg.sender);
         require(allowance >= request.paymentPerRoundForVerifiers, "Insufficient stake");
         require(balance >= request.paymentPerRoundForVerifiers, "Insufficient stake");
-        require(compToken.transferFrom(msg.sender, address(this), request.paymentPerRoundForVerifiers), "Insufficient stake");
-
         require(request.verificationDeadline >= block.timestamp + (3 * request.timeAllocatedForVerification), "Not enough time to perform round before verification deadline");
         require(!roundDetails[requestId][request.roundIndex].verifiersApplied[msg.sender], "Verifier already applied");
 
         roundDetails[requestId][request.roundIndex].verifiersApplied[msg.sender] = true;
         request.verifiers.push(msg.sender);
-        emit VerificationApplied(requestId, msg.sender, request.layerComputeIndex);
+
 
         if (request.verifiers.length == request.numVerifiers) {
             emit VerificationSelectionStarted(requestId, request.layerComputeIndex);
         }
+        require(compToken.transferFrom(msg.sender, address(this), request.paymentPerRoundForVerifiers), "Insufficient stake");
+        emit VerificationApplied(requestId, msg.sender, request.layerComputeIndex);
     }
 
     // function called when verification deadline has passed and we do not have enough verifiers for the round to start
@@ -456,7 +517,7 @@ contract ComputationMarket {
         require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "Already been paid");
 
         verifications[requestId][roundNum][msg.sender].verifierPaid = true;
-        compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
+        require(compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers), "Error in Market. Payment not sent");
     }
 
     // A verifier can only participate if they performed this trigger
@@ -479,14 +540,14 @@ contract ComputationMarket {
 
             request.verifiers[randNum] = swap2;
             request.verifiers[request.verifierSelectionCount] = swap1;
-            emit VerifierChosen(requestId, request.verifiers[request.verifierSelectionCount], request.layerComputeIndex, request.verifierSelectionCount);
             roundDetails[requestId][request.roundIndex].verifiersChosen[swap1] = true;
             request.chosenVerifiers.push(request.verifiers[request.verifierSelectionCount]);
             request.totalPaidForVerification += request.paymentPerRoundForVerifiers;
+            emit VerifierChosen(requestId, request.verifiers[request.verifierSelectionCount], request.layerComputeIndex, request.verifierSelectionCount);
         } else {
-            emit VerifierUnchosen(requestId, request.verifiers[request.verifierSelectionCount], request.layerComputeIndex, request.verifierSelectionCount);
-            compToken.transfer(request.verifiers[request.verifierSelectionCount], request.paymentPerRoundForVerifiers);
             verifications[requestId][request.roundIndex][request.verifiers[request.verifierSelectionCount]].verifierPaid = true;
+            require(compToken.transfer(request.verifiers[request.verifierSelectionCount], request.paymentPerRoundForVerifiers), "Error in Market. Payment not sent");
+            emit VerifierUnchosen(requestId, request.verifiers[request.verifierSelectionCount], request.layerComputeIndex, request.verifierSelectionCount);
         }
         request.verifierSelectionCount += 1;
         if(request.verifierSelectionCount == request.numVerifiersSampleSize) {
@@ -502,8 +563,8 @@ contract ComputationMarket {
         require(request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification), "Still enough time to perform round before verification deadline");
         require(request.state == ComputationMarket.RequestStates.CHOOSING_VERIFIERS, "Request Must be in choosing verifiers state");
         require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "Already been paid");
-        compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
         verifications[requestId][roundNum][msg.sender].verifierPaid = true;
+        require(compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers), "Error in Market. Payment not sent");
     }
 
     // Function to return stake for verifiers not chosen to participate in the next round
@@ -512,8 +573,8 @@ contract ComputationMarket {
         require(!roundDetails[requestId][roundNum].verifiersChosen[msg.sender], "Chosen verifeir cannot return stake");
         require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "Already been paid");
 
-        compToken.transfer(msg.sender, requests[requestId].paymentPerRoundForVerifiers); 
         verifications[requestId][roundNum][msg.sender].verifierPaid = true;
+        require(compToken.transfer(msg.sender, requests[requestId].paymentPerRoundForVerifiers), "Error in Market. Payment not sent"); 
     }
 
     // Function to start a round of verification
@@ -527,8 +588,8 @@ contract ComputationMarket {
         roundDetails[requestId][request.roundIndex].providerRevealEndTime = roundDetails[requestId][request.roundIndex].commitEndTime + request.timeAllocatedForVerification;
         roundDetails[requestId][request.roundIndex].commitmentRevealEndTime = roundDetails[requestId][request.roundIndex].providerRevealEndTime + request.timeAllocatedForVerification;
 
-        emit CommitmentPhaseStarted(requestId, block.timestamp, roundDetails[requestId][request.roundIndex].commitEndTime, request.layerComputeIndex);
         request.state = RequestStates.COMMITMENT_STATE;
+        emit CommitmentPhaseStarted(requestId, block.timestamp, roundDetails[requestId][request.roundIndex].commitEndTime, request.layerComputeIndex);
     }
 
     // Function to submit a commitment by a verifier
@@ -609,7 +670,8 @@ contract ComputationMarket {
 
         RoundDetails storage round = roundDetails[requestId][request.roundIndex];
 
-        round.votes[voteHash]++;
+        round.votes[voteHash] += requestVerifierVoteCounts[requestId](msg.sender);
+        //round.votes[voteHash]++;
 
         if (round.votes[voteHash] == round.majorityCount) {
             roundDetails[requestId][request.roundIndex].majorityVoteHash = bytes32(0);
@@ -638,21 +700,21 @@ contract ComputationMarket {
         require(roundNum >= 1, "Round number must be greater than or equal to 1");
         require(roundDetails[requestId][roundNum].verifiersTriggered[msg.sender], "You did not trigger");
 
-        verifications[requestId][roundNum][msg.sender].verifierPaid = true;
+        verifications[requestId][roundNum][msg.sender].verifierPaid = true; // Stops reentrancy and prevents double payment
         bytes32 majorityVoteHashForRound = roundDetails[requestId][roundNum].majorityVoteHash;
         if(majorityVoteHashForRound == bytes32(0)) {
-            compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers);
             verifications[requestId][roundNum][msg.sender].verifierPaid = true;
             if (roundNum == request.roundIndex) {
                 initialiseRound(requestId);
             }
+            require(compToken.transfer(msg.sender, request.paymentPerRoundForVerifiers), "Error in Market. Transfer failed");
         } else {
             if (majorityVoteHashForRound == verifications[requestId][roundNum][msg.sender].voteHash) {
                 
                 uint256 reward = request.paymentPerRoundForVerifiers * request.numVerifiersSampleSize / roundDetails[requestId][roundNum].votes[majorityVoteHashForRound];
                 uint256 stake = request.paymentPerRoundForVerifiers;
                 verifications[requestId][roundNum][msg.sender].verifierPaid = true;
-                compToken.transfer(msg.sender, reward + stake);
+                require(compToken.transfer(msg.sender, reward + stake), "Error in Market. Transfer failed");
             }
             // provider doesn't match with majority vote, then provider failure
             if(request.roundIndex == roundNum) {
@@ -682,13 +744,15 @@ contract ComputationMarket {
 
         request.completed = true;
 
-        address toPay = compNFT.ownerOf(providerNFTs[requestId].compNFT_id);
-        providerNFTs[requestId].hasBeenPaid = true;
+        /*address toPay = compNFT.ownerOf(providerNFTs[requestId].compNFT_id);
+        providerNFTs[requestId].hasBeenPaid = true;*/
+        address toPay = request.mainProvider;
         
-        compToken.transfer(toPay, request.stake + request.paymentForProvider);
+        
 
         request.state = RequestStates.SUCCESS;
-
+        //providerSuccessfulRequestCount[msg.sender]++;
+        require(compToken.transfer(toPay, request.stake + request.paymentForProvider), "Error in Market. Transfer failed");
         emit ProviderResultSuccessfullyVerified(requestId);
     }
 
@@ -698,11 +762,13 @@ contract ComputationMarket {
         require(block.timestamp >= request.verificationDeadline && request.state != RequestStates.UNSUCCESSFUL && !request.completed, "Verification Deadline has not been passed.");
         request.completed = true;
 
-        address toPay = compNFT.ownerOf(providerNFTs[requestId].compNFT_id);
-        providerNFTs[requestId].hasBeenPaid = true;
+        /*address toPay = compNFT.ownerOf(providerNFTs[requestId].compNFT_id);
+        providerNFTs[requestId].hasBeenPaid = true;*/
+        address toPay = request.mainProvider;
 
-        compToken.transfer(toPay, request.stake + request.paymentForProvider);
         request.state = RequestStates.SUCCESS;
+        //providerSuccessfulRequestCount[msg.sender]++;
+        require(compToken.transfer(toPay, request.stake + request.paymentForProvider), "Error in Market. Transfer failed");
         emit ProviderResultSuccessfullyVerified(requestId);
     }
 
@@ -716,8 +782,10 @@ contract ComputationMarket {
 
         request.state = RequestStates.UNSUCCESSFUL;
 
-        compToken.transfer(request.consumer, request.paymentForProvider + request.stake + request.totalPaymentForVerifiers - request.totalPaidForVerification);
         request.completed = true;
+        //providerFailedRequestCount[msg.sender]++;
+
+        require(compToken.transfer(request.consumer, request.paymentForProvider + request.stake + request.totalPaymentForVerifiers - request.totalPaidForVerification), "Error in Market. Transfer failed");
         emit ProviderResultUnsuccessful(requestId);
     }
 

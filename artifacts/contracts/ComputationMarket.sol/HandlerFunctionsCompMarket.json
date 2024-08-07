@@ -1,0 +1,30 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "HandlerFunctionsCompMarket",
+  "sourceName": "contracts/ComputationMarket.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "add",
+          "type": "address"
+        }
+      ],
+      "name": "defaultVerifierVoteCounts",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x60808060405234601457608b908161001a8239f35b600080fdfe6080806040526004361015601257600080fd5b600090813560e01c63765a4a7a14602857600080fd5b3460515760203660031901126051576004356001600160a01b0381160360515780600160209252f35b5080fdfea26469706673582212206c29917100fa9085e84d68bd07d6bbb9f44a731663abb49bb655d04f2ad713d564736f6c63430008140033",
+  "deployedBytecode": "0x6080806040526004361015601257600080fd5b600090813560e01c63765a4a7a14602857600080fd5b3460515760203660031901126051576004356001600160a01b0381160360515780600160209252f35b5080fdfea26469706673582212206c29917100fa9085e84d68bd07d6bbb9f44a731663abb49bb655d04f2ad713d564736f6c63430008140033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

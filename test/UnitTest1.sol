@@ -16,6 +16,7 @@ contract MockERC20 is ERC20 {
 contract ComputationMarketTest is Test {
     ComputationMarket public market;
     MockERC20 public compToken;
+    CompNFT public compNFT;
 
     address consumer = address(1);
     address provider = address(2);
@@ -37,7 +38,9 @@ contract ComputationMarketTest is Test {
     function setUp() public {
         // Deploy the mock COMP token and the market contract
         compToken = new MockERC20();
+        //compNFT = new CompNFT();
         market = new ComputationMarket(address(compToken));
+        //compNFT.transferNFTContractOwnership(address(market));
 
         // Distribute COMP tokens to test accounts
         distributeTokens();

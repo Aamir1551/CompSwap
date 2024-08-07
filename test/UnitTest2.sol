@@ -12,6 +12,7 @@ contract ComputationMarketTest is Test {
     ComputationMarket public market;
     COMPToken public compToken;
     CompNFT public compNFT;
+    HandlerFunctionsCompMarket public handler;
 
     address consumer = address(1);
     address provider = address(2);
@@ -35,9 +36,10 @@ contract ComputationMarketTest is Test {
     function setUp() public {
         // Deploy the mock COMP token and the market contract
         compToken = new COMPToken(1000000000000000000000000000 * 10 ** 18);
-        //compNFT = new CompNFT();
-        market = new ComputationMarket(address(compToken));
-        //compNFT.transferNFTContractOwnership(address(market));
+        compNFT = new CompNFT();
+        handler = new HandlerFunctionsCompMarket();
+        market = new ComputationMarket(address(compToken), address(compNFT), address(handler));
+        compNFT.transferNFTContractOwnership(address(market));
 
         // Distribute COMP tokens to test accounts
         distributeTokens();
@@ -154,10 +156,101 @@ contract ComputationMarketTest is Test {
         vm.stopPrank();
     }
 
-    function allVerifiersCollectRewards(uint256 requestId, uint256 roundNum) internal {
-        ComputationMarket.Request memory request = market.getRequestDetails(requestId);
-        for(uint256 i = 0; i < request.numVerifiersSampleSize; i++) {
-            collectRewards(request.chosenVerifiers[i], requestId, roundNum);
+    struct RequestDetails {
+        address consumer; // The address of the consumer who created the request
+        uint256 paymentForProvider; // Payment allocated for the provider
+        uint256 totalPaymentForVerifiers; // Total payment allocated for verifiers
+        uint256 numOperations; // Number of operations to be performed
+        uint256 numVerifiers; // Number of verifiers needed
+        string operationFileURL; // URL of the file with operations
+        uint256 computationDeadline; // Deadline for the provider to complete computations
+        uint256 verificationDeadline; // Deadline for verifiers to complete verifications
+        uint256 totalPayment; // Total payment provided by the consumer
+        bool completed; // Indicates if the request is completed. If true, the request has reached the end of its lifecycle
+        bool hasBeenComputed; // Indicates if the computation has been completed
+        uint256 numVerifiersSampleSize; // Number of verifiers sampled for each round
+        address mainProvider; // The provider who accepted the request
+        uint256 timeAllocatedForVerification; // Time allocated for each verification round
+        uint256 layerCount; // Number of layers of operations
+        uint256 layerComputeIndex; // Number of layers computed so far into the DAG
+        uint256 roundIndex; // Number of rounds we have performed so far
+        ComputationMarket.RequestStates state; // The state of the current request
+        uint256 stake; // Amount staked by the provider
+        uint256 paymentPerRoundForVerifiers; // Amount the consumer will pay for verification
+        uint256 totalPaidForVerification; // Running total of amount paid to verifiers
+        uint256 protocolVersion; // Version of the protocol we are following
+        uint256 verifierSelectionCount; // Number of verifiers selected for the current round
+        uint256 firstinitialisedTime; // Time when the request was first initialised
+        uint256 layerSize; // Number of operations that are verified within each of the layers for each round
+        bytes32 hashOfInputFiles; // Hash of the input files 
+    }
+
+    function getRequestDetails(uint256 requestID) public view returns (RequestDetails memory) {
+        (
+            address consumer1,
+            uint256 paymentForProvider1,
+            uint256 totalPaymentForVerifiers1,
+            uint256 numOperations1,
+            uint256 numVerifiers1,
+            string memory operationFileURL1,
+            uint256 computationDeadline1,
+            uint256 verificationDeadline1,
+            uint256 totalPayment1,
+            bool completed1,
+            bool hasBeenComputed1,
+            uint256 numVerifiersSampleSize1,
+            address mainProvider1,
+            uint256 timeAllocatedForVerification1,
+            uint256 layerCount1,
+            uint256 layerComputeIndex1,
+            uint256 roundIndex1,
+            ComputationMarket.RequestStates state1,
+            uint256 stake1,
+            uint256 paymentPerRoundForVerifiers1,
+            uint256 totalPaidForVerification1,
+            uint256 protocolVersion1,
+            uint256 verifierSelectionCount1,
+            uint256 firstinitialisedTime1,
+            uint256 layerSize1,
+            bytes32 hashOfInputFiles1
+        ) = market.requests(requestID);
+
+        return RequestDetails({
+            consumer: consumer1,
+            paymentForProvider: paymentForProvider1,
+            totalPaymentForVerifiers: totalPaymentForVerifiers1,
+            numOperations: numOperations1,
+            numVerifiers: numVerifiers1,
+            operationFileURL: operationFileURL1,
+            computationDeadline: computationDeadline1,
+            verificationDeadline: verificationDeadline1,
+            totalPayment: totalPayment1,
+            completed: completed1,
+            hasBeenComputed: hasBeenComputed1,
+            numVerifiersSampleSize: numVerifiersSampleSize1,
+            mainProvider: mainProvider1,
+            timeAllocatedForVerification: timeAllocatedForVerification1,
+            layerCount: layerCount1,
+            layerComputeIndex: layerComputeIndex1,
+            roundIndex: roundIndex1,
+            state: state1,
+            stake: stake1,
+            paymentPerRoundForVerifiers: paymentPerRoundForVerifiers1,
+            totalPaidForVerification: totalPaidForVerification1,
+            protocolVersion: protocolVersion1,
+            verifierSelectionCount: verifierSelectionCount1,
+            firstinitialisedTime: firstinitialisedTime1,
+            layerSize: layerSize1,
+            hashOfInputFiles: hashOfInputFiles1
+        });
+    }
+
+
+    function allVerifiersCollectRewards(address[] memory verifiers, uint256 requestId, uint256 roundNum) internal {
+        for(uint256 i = 0; i < verifiers.length; i++) {
+            if(market.isVerifierChosenForRound(requestId, roundNum, verifiers[i])) {
+                collectRewards(verifiers[i], requestId, roundNum);
+            }
         }
     }
 
@@ -173,8 +266,8 @@ contract ComputationMarketTest is Test {
         }
 
         // Fetch the chosen verifiers from the request structure
-        ComputationMarket.Request memory request = market.getRequestDetails(0);
-        address[] memory chosenVerifiers = request.chosenVerifiers;
+        RequestDetails memory request = getRequestDetails(0);
+        address[] memory chosenVerifiers = getVerifiersChosen(0, roundNum, verifiers);
 
         // Submit commitment for the chosen verifiers
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
@@ -201,18 +294,18 @@ contract ComputationMarketTest is Test {
         }
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        allVerifiersCollectRewards(0, roundNum);
+        allVerifiersCollectRewards(verifiers, 0, roundNum);
         vm.stopPrank();
 
-        ComputationMarket.Request memory requestUpdated = market.getRequestDetails(0);
+        RequestDetails memory requestUpdated = getRequestDetails(0);
         if (majorityExpected) {
             if(requestUpdated.layerComputeIndex == requestUpdated.layerCount) {
-                assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.SUCCESS));
+                assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.SUCCESS), "Incorrect state");
             } else {
-                assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS));
+                assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS), "Incorrect state");
             }
         } else {
-            assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));
+            assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL), "Incorrect state");
         }
     }
 
@@ -278,8 +371,28 @@ contract ComputationMarketTest is Test {
         agreements[4] = true;
         performRoundWithVerifiers(verifiers, answers, agreements, true, 3);
 
-        ComputationMarket.Request memory request = market.getRequestDetails(0);
+        RequestDetails memory request = getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.SUCCESS));
+    }
+
+    function getVerifiersChosen(uint256 requestId, uint256 roundNum ,address[] memory verifiers) internal view returns (address[] memory) {
+        address[] memory chosenVerifiers = new address[](verifiers.length);
+        uint256 k = 0;
+
+        for (uint256 i = 0; i < verifiers.length; i++) {
+            if (market.isVerifierChosenForRound(requestId, roundNum, verifiers[i])) {
+                chosenVerifiers[k] = verifiers[i];
+                k++;
+            }
+        }
+
+        // Resize the array to remove unused slots
+        address[] memory result = new address[](k);
+        for (uint256 i = 0; i < k; i++) {
+            result[i] = chosenVerifiers[i];
+        }
+
+        return result; 
     }
 
     function testVerifierBalancesAfterRounds() public {
@@ -316,8 +429,8 @@ contract ComputationMarketTest is Test {
         performRoundWithVerifiers(verifiers, answers, agreements, true, 1);
 
         // Fetch the chosen verifiers from the request structure
-        ComputationMarket.Request memory request = market.getRequestDetails(0);
-        address[] memory chosenVerifiers = request.chosenVerifiers;
+        RequestDetails memory request = getRequestDetails(0);
+        address[] memory chosenVerifiers = getVerifiersChosen(0, 1, verifiers);
 
         // Balances after round 1
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
@@ -355,7 +468,7 @@ contract ComputationMarketTest is Test {
         agreements[4] = true;
         performRoundWithVerifiers(verifiers, answers, agreements, true, 3);
 
-        request = market.getRequestDetails(0);
+        request = getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.SUCCESS));
     }
 
@@ -367,7 +480,7 @@ contract ComputationMarketTest is Test {
         market.cancelRequest(0);
         vm.stopPrank();
 
-        ComputationMarket.Request memory request = market.getRequestDetails(0);
+        RequestDetails memory request = getRequestDetails(0);
         assertTrue(request.completed);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.CANCELLED));
     }
@@ -375,7 +488,7 @@ contract ComputationMarketTest is Test {
     function testErrorsAndRequiredStatements() public {
         createTestRequest();
         vm.startPrank(provider);
-        vm.expectRevert("Insufficient stake");
+        vm.expectRevert("Prov INS");
         market.selectRequest(0);
         vm.stopPrank();
     }
@@ -412,8 +525,8 @@ contract ComputationMarketTest is Test {
         for (uint256 i = 0; i < verifiers.length; i++) {
             triggerVerification(verifiers[i]);
         }
-        ComputationMarket.Request memory request = market.getRequestDetails(0);
-        address[] memory chosenVerifiers = request.chosenVerifiers;
+        RequestDetails memory request = getRequestDetails(0);
+        address[] memory chosenVerifiers = getVerifiersChosen(0, 1, verifiers);
 
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
             uint256 verifierIndex = findVerifierIndex(chosenVerifiers[i], verifiers);
@@ -439,9 +552,9 @@ contract ComputationMarketTest is Test {
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
         //market.calculateMajorityAndReward(0);
-        allVerifiersCollectRewards(0, 1);
+        allVerifiersCollectRewards(verifiers, 0, 1);
 
-        request = market.getRequestDetails(0);
+        request = getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.CHOOSING_VERIFIERS));
         }
 
@@ -478,8 +591,8 @@ contract ComputationMarketTest is Test {
             triggerVerification(verifiers[i]);
         }
 
-        ComputationMarket.Request memory request = market.getRequestDetails(0);
-        address[] memory chosenVerifiers = request.chosenVerifiers;
+        RequestDetails memory request = getRequestDetails(0);
+        address[] memory chosenVerifiers = getVerifiersChosen(0, 1, verifiers);
 
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
             uint256 verifierIndex = findVerifierIndex(chosenVerifiers[i], verifiers);
@@ -501,9 +614,9 @@ contract ComputationMarketTest is Test {
         }
 
         vm.warp(block.timestamp + timeAllocatedForVerification + 1);
-        allVerifiersCollectRewards(0, 1);
+        allVerifiersCollectRewards(verifiers, 0, 1);
 
-        request = market.getRequestDetails(0);
+        request = getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));
     }
 
@@ -559,7 +672,7 @@ contract ComputationMarketTest is Test {
         agreements[4] = true;
         performRoundWithVerifiersWithoutTimeWarps(verifiers, answers, agreements, true, 3);
 
-        ComputationMarket.Request memory request = market.getRequestDetails(0);
+        RequestDetails memory request = getRequestDetails(0);
         assertEq(uint256(request.state), uint256(ComputationMarket.RequestStates.SUCCESS));
     }
 
@@ -575,8 +688,8 @@ contract ComputationMarketTest is Test {
         }
 
         // Fetch the chosen verifiers from the request structure
-        ComputationMarket.Request memory request = market.getRequestDetails(0);
-        address[] memory chosenVerifiers = request.chosenVerifiers;
+        RequestDetails memory request = getRequestDetails(0);
+        address[] memory chosenVerifiers = getVerifiersChosen(0, roundNum, verifiers);
 
         // Submit commitment for the chosen verifiers
         for (uint256 i = 0; i < chosenVerifiers.length; i++) {
@@ -598,10 +711,10 @@ contract ComputationMarketTest is Test {
             vm.stopPrank();
         }
 
-        allVerifiersCollectRewards(0, roundNum);
+        allVerifiersCollectRewards(verifiers, 0, roundNum);
         vm.stopPrank();
 
-        ComputationMarket.Request memory requestUpdated = market.getRequestDetails(0);
+        RequestDetails memory requestUpdated = getRequestDetails(0);
         if (majorityExpected) {
             if(requestUpdated.layerComputeIndex == requestUpdated.layerCount) {
                 assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.SUCCESS));
@@ -612,5 +725,4 @@ contract ComputationMarketTest is Test {
             assertEq(uint256(requestUpdated.state), uint256(ComputationMarket.RequestStates.UNSUCCESSFUL));
         }
     }
-
 }

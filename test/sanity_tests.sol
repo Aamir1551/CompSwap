@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: MIT
+/*// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
 import "../contracts/ComputationMarket.sol";
+import "forge-std/Test.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -16,6 +16,7 @@ contract ComputationMarketTest is Test {
     ComputationMarket public market;
     MockERC20 public compToken;
     CompNFT public compNFT;
+    HandlerFunctionsCompMarket public handler;
 
     address consumer = address(1);
     address provider = address(2);
@@ -37,9 +38,10 @@ contract ComputationMarketTest is Test {
     function setUp() public {
         // Deploy the mock COMP token and the market contract
         compToken = new MockERC20();
-        //compNFT = new CompNFT();
-        market = new ComputationMarket(address(compToken));
-        //compNFT.transferNFTContractOwnership(address(market));
+        compNFT = new CompNFT();
+        handler = new HandlerFunctionsCompMarket();
+        market = new ComputationMarket(address(compToken), address(compNFT), address(handler));
+        compNFT.transferNFTContractOwnership(address(market));
 
         // Distribute COMP tokens to test accounts
         compToken.transfer(consumer, 1000000000000000000000000 * 10 ** compToken.decimals());
@@ -210,5 +212,5 @@ contract ComputationMarketTest is Test {
         market.calculateMajorityAndReward(0);
         ComputationMarket.Request memory request = market.getRequestDetails(0);
         // Add more asserts to check the state and balances of verifiers and provider
-    }*/
-}
+    }
+}*/

@@ -422,7 +422,7 @@ contract ComputationMarket {
 
     // function called when verification deadline has passed and we do not have enough verifiers for the round to start
     function verificationDeadlinePassedForVeryfying(uint256 requestId, uint256 roundNum) public {
-        Request storage request = requests[requestId];
+        Request memory request = requests[requestId];
         require(request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification), "NDP1"); // NDP means not deadline passed
         require(roundDetails[requestId][roundNum].verifiersApplied[msg.sender], "VDA1"); // VDA means Verifier did not apply
         require(!verifications[requestId][roundNum][msg.sender].verifierPaid, "AP1");
@@ -468,7 +468,7 @@ contract ComputationMarket {
 
     // Function to return stake for verifiers if we do not have enough time to perform the next round 
     function returnStakeDueToTimeout(uint256 requestId, uint256 roundNum) external {
-        Request storage request = requests[requestId];
+        Request memory request = requests[requestId];
 
         require(roundDetails[requestId][roundNum].verifiersApplied[msg.sender], "NCV1");
         require(request.verificationDeadline < block.timestamp + (3 * request.timeAllocatedForVerification), "DP3");
@@ -490,7 +490,7 @@ contract ComputationMarket {
 
     // Function to start a round of verification
     function startRound(uint256 requestId) internal {
-        Request storage request = requests[requestId];
+        Request memory request = requests[requestId];
         require(request.layerComputeIndex < request.layerCount, "ALP"); // ALP means all layers have been computed
         require(request.verificationDeadline > block.timestamp + (3 * request.timeAllocatedForVerification), "DP4"); // DP means deadline passed
 
@@ -499,7 +499,7 @@ contract ComputationMarket {
         roundDetails[requestId][request.roundIndex].providerRevealEndTime = roundDetails[requestId][request.roundIndex].commitEndTime + request.timeAllocatedForVerification;
         roundDetails[requestId][request.roundIndex].commitmentRevealEndTime = roundDetails[requestId][request.roundIndex].providerRevealEndTime + request.timeAllocatedForVerification;
 
-        request.state = RequestStates.COMMITMENT_STATE;
+        requests[requestId].state = RequestStates.COMMITMENT_STATE;
         emit CommitmentPhaseStarted(requestId, block.timestamp, roundDetails[requestId][request.roundIndex].commitEndTime, request.layerComputeIndex);
     }
 
@@ -508,7 +508,7 @@ contract ComputationMarket {
         uint256 requestId,
         bytes32 computedHash
     ) external {
-        Request storage request = requests[requestId];
+        Request memory request = requests[requestId];
 
         require(request.state == RequestStates.COMMITMENT_STATE, "S!=CS"); // S!=CS means request not yet in commitment state
         require(block.timestamp <= roundDetails[requestId][request.roundIndex].commitEndTime, "CPE"); // CPE means commit phase ended
@@ -520,7 +520,7 @@ contract ComputationMarket {
         
         roundDetails[requestId][request.roundIndex].commitsSubmitted++;
         if(roundDetails[requestId][request.roundIndex].commitsSubmitted == request.numVerifiersSampleSize) {
-            request.state = RequestStates.PROVIDER_REVEAL_STATE;
+            requests[requestId].state = RequestStates.PROVIDER_REVEAL_STATE;
         }
 
         emit CommitmentSubmitted(requestId, msg.sender);
@@ -558,7 +558,7 @@ contract ComputationMarket {
         bytes32 answer,
         bytes32 nonce
     ) external {
-        Request storage request = requests[requestId];
+        Request memory request = requests[requestId];
         require(block.timestamp > roundDetails[requestId][request.roundIndex].providerRevealEndTime ||
             request.state == RequestStates.COMMITMENT_REVEAL_STATE, "PRPNE"); // PRPNE means provider reveal phase not ended
         require(block.timestamp <= roundDetails[requestId][request.roundIndex].commitmentRevealEndTime, "RPE"); // RPE means reveal phase ended

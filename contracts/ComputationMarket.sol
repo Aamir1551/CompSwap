@@ -435,7 +435,7 @@ contract ComputationMarket {
     // Function to choose verifiers for the next round
     function chooseVerifiersForRequestTrigger(uint256 requestId) external {
         Request storage request = requests[requestId];
-        require(request.verifiers.length == request.numVerifiers, "AF1"); // AF means all filled
+        require(request.verifiers.length == request.numVerifiers, "AF1"); // AF means all filled, since everyone has triggered
         require(request.hasBeenComputed, "RNYC1"); // RNYC Request not yet completed
         require(request.verifiers.length >= request.numVerifiersSampleSize, "NEV1"); // NEV means not enough verifiers
         require(request.verificationDeadline >= block.timestamp + (3 * request.timeAllocatedForVerification), "DP2");

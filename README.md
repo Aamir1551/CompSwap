@@ -8,6 +8,7 @@ In that file, we do a successful verification run of a request which we also dep
 Alternatively, if you'd like to deploy this project yourself, please follow the instructions given below in a blank remix workspace project:
 
 1. Please create a compiler_config.json and paste in the below json:
+```
 {
 	"language": "Solidity",
 	"settings": {
@@ -24,6 +25,7 @@ Alternatively, if you'd like to deploy this project yourself, please follow the 
 		}
 	}
 }
+```
 
 This allows the viaIR optimisation which is required to compile the ComputationMarket contract. After this copy and paste the contract files: COMPNFT.sol, COMPToken.sol, ComputationMarket.sol and HandlerFunctionsCompMarket.sol within a newly created folder you called contract. As you paste in these files, you will notice remix itself will create a .deps folder, and insert dependencies for the files within it. For every file we now deploy, please first compile it, and then try and deploy that file. To compile, click on the "Solidity Compiler" tab, and then to Deploy, click on the "Deploy and run transactions tab".
 

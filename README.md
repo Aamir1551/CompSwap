@@ -103,7 +103,7 @@ In the below steps now, we will perform a successful request, that goes through 
       ```
       <requestId>
       ```
-      If this is the first time you created the request, and deployed the market contract, then the request Id is 0. Therefore replace requestId with 0
+      If this is the first time you created the request, and deployed the market contract, then the request Id is 0. Therefore replace requestId with 0.
       Please remember to switch acounts to the provider in your wallet when performing this transaction, since it's the provider that is meant to perform this transaction.
 
 12. **Complete the Request**
@@ -152,6 +152,6 @@ In the below steps now, we will perform a successful request, that goes through 
       ```
 
 
-To generate valid commitments, you may use the file: commitment_generator, and in the variable list: verifier_addresses pas in the 5 verifier addresses you are using.
+To generate valid commitments, you may use the file: commitment_generator, and in the variable list: verifier_addresses pass in the 5 verifier addresses you are using.
 
 This file will generate a nonce and the relevant commitments you will need to pass. For a successful run, all verifiers must pass in the "Provider Answer Hash" as the <answer_hash>

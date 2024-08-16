@@ -104,7 +104,7 @@ In the below steps now, we will perform a successful request, that goes through 
       <requestId>
       ```
       If this is the first time you created the request, and deployed the market contract, then the request Id is 0. Therefore replace requestId with 0
-      Please ensure to switch acounts to the provider in your wallet. 
+      Please remember to switch acounts to the provider in your wallet when performing this transaction, since it's the provider that is meant to perform this transaction.
 
 12. **Complete the Request**
     - The provider should complete the request by calling `completeRequest` and providing the URL to the output file:

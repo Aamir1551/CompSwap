@@ -1,6 +1,6 @@
 In this project, we create a computational marketplace on the Ethereum blockchain as per my thesis. We will deploy this DApp on the Arbitrum Blockchain. 
 
-Note that the COMP token is equal to 18**18 COMP units, since the COMP token follows the ERC20 standard.
+Note that a single COMP token is equal to 10**18 COMP units, since the COMP token follows the ERC20 standard.
 
 You can run this project, by running the relevant python file: AllCorrectSimulator.ipynb
 In that file, we do a successful verification run of a request which we also deploy on the Arbiturm sepolia test net.

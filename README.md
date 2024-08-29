@@ -34,7 +34,7 @@ This allows the viaIR optimisation which is required to compile the ComputationM
      ```
      1000000000000000000000000
      ```
-     Note that the account you are using to deploy this token with, will be your consumer account, and these million tokens will be transferred to the consumer account. You will later transfer these million tokens to the other accounts (such as the provider and the verifiers). (Or if you wish, you could create a pool on Uniswap, and sell it to others there)
+     Note that the account you are using to deploy this token with, will be your consumer account (as per the directions of these instructions, however you can create requests with any account, as long as you have the necessary tokens), and these tokens will be transferred to that consumer account. You will later transfer these tokens to the other accounts (such as the provider and the verifiers - Or if you wish, you could create a pool on Uniswap, and sell it to others there.
 
 4. **HandlerFunctionsCompMarket Deployment**
    - This contract has no constructor parameters, so just deploy it without any input.

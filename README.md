@@ -5,6 +5,8 @@ Note that a single COMP token is equal to 10**18 COMP units, since the COMP toke
 You can run this project, by running the relevant python file: AllCorrectSimulator.ipynb
 In that file, we do a successful verification run of a request which we also deploy on the Arbiturm sepolia test net.
 
+We also have the files: ProviderIncorrectSimulator.ipynb which simulates what happens when a provider is incorrect, and we also have the file VerifierIncorrectSimulator.ipynb. These files live in the contracts folder, and each of them deploy the necessary contracts for the marketplace on the Arbitrum Sepolia test net, and then create a request for computation, and simulate an entire verification, with the neceessary functions being called. The ProviderIncorrectSimulator.ipynb simulates what happens when a provider is incorrect, and demonstrates the slashing behavior, and likewise the file VerifierIncorrectSimulator.ipynb demonstrates what happens when a verifier is incorrect, and the slashing that takes place. Finally, to run these files you must also have web3, eth_abi, solcx installed on your system. 
+
 Alternatively, if you'd like to deploy this project yourself, please follow the instructions given below in a blank remix workspace project:
 
 1. Please create a compiler_config.json and paste in the below json:
@@ -152,6 +154,8 @@ In the below steps now, we will perform a successful request, that goes through 
       ```
 
 
-To generate valid commitments, you may use the file: commitment_generator, and in the variable list: verifier_addresses pass in the 5 verifier addresses you are using.
+To generate valid commitments, you may use the file: commitment_generator.ipynb, and in the variable list: verifier_addresses pass in the 5 verifier addresses you are using. To run this file, you will need to use Python 3, and will need to have web3 package installed on your system.
 
-This file will generate a nonce and the relevant commitments you will need to pass. For a successful run, all verifiers must pass in the "Provider Answer Hash" as the <answer_hash>
+This file will generate a nonce and the relevant commitments you will need to pass. For a successful run, all verifiers must pass in the "Provider Answer Hash" as the <answer_hash>. To use your own private key and initialisation vector, please set the variables provider_key and initialisation_vector to the required values. Likewise for the provider_answer_hash please set this to your own hashed answer for that round.
+
+The file payment analysis exists to show the expected returns participants in the market could earn depending upon market conditions. To run this file, please ensure you have matplotlib installed on your system. We make use of these graphs in chapter 5 and 6. Feel free to play around with different configurations of these graphs, by tuning the values of n and k.

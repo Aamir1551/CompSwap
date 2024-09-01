@@ -7,6 +7,14 @@ In that file, we do a successful verification run of a request which we also dep
 
 We also have the files: ProviderIncorrectSimulator.ipynb which simulates what happens when a provider is incorrect, and we also have the file VerifierIncorrectSimulator.ipynb. These files live in the contracts folder, and each of them deploy the necessary contracts for the marketplace on the Arbitrum Sepolia test net, and then create a request for computation, and simulate an entire verification, with the neceessary functions being called. The ProviderIncorrectSimulator.ipynb simulates what happens when a provider is incorrect, and demonstrates the slashing behavior, and likewise the file VerifierIncorrectSimulator.ipynb demonstrates what happens when a verifier is incorrect, and the slashing that takes place. Additionally, to run these files you must also have web3, eth_abi, solcx installed on your system. 
 
+To generate valid commitments, you may use the file: commitment_generator.ipynb, and in the variable list: verifier_addresses pass in the 5 verifier addresses you are using. To run this file, you will need to use Python 3, and will need to have web3 package installed on your system. This file will generate a nonce and the relevant commitments you will need to pass. For a successful run, all verifiers must pass in the "Provider Answer Hash" as the <answer_hash>. To use your own private key and initialisation vector, please set the variables provider_key and initialisation_vector to the required values. Likewise for the provider_answer_hash please set this to your own hashed answer for that round.
+
+The file paymentAnalysis.ipynb exists to show the expected returns participants in the market could earn depending upon market conditions. To run this file, please ensure you have matplotlib installed on your system. We make use of these graphs in chapter 5 and 6. Feel free to play around with different configurations of these graphs, by tuning the values of n and k.
+
+Our final python file is protocol1.ipynb. This file demonstrates how providers create hashes of the "roots of a round" that we described in section 4. To run this file, please ensure that you have hashlib, Crypto and secrets and numpy python packages installed on your system.
+
+Finally, to run the test cases please run: forge test --via-ir -vv using the version of forge: forge 0.2.0. This will run the test files: sanity_tests.sol, UnitTest1.sol, UnitTest2.sol, UnitTest3.sol, UnitTest4.sol. All these test files are in the test folder.
+
 Alternatively, if you'd like to deploy this project yourself, please follow the instructions given below in a blank remix workspace project:
 
 1. Please create a compiler_config.json and paste in the below json:
@@ -152,60 +160,3 @@ In the below steps now, we will perform a successful request, that goes through 
       ```
       <requestId>, <round_number>
       ```
-
-
-To generate valid commitments, you may use the file: commitment_generator.ipynb, and in the variable list: verifier_addresses pass in the 5 verifier addresses you are using. To run this file, you will need to use Python 3, and will need to have web3 package installed on your system.
-
-This file will generate a nonce and the relevant commitments you will need to pass. For a successful run, all verifiers must pass in the "Provider Answer Hash" as the <answer_hash>. To use your own private key and initialisation vector, please set the variables provider_key and initialisation_vector to the required values. Likewise for the provider_answer_hash please set this to your own hashed answer for that round.
-
-The file payment analysis exists to show the expected returns participants in the market could earn depending upon market conditions. To run this file, please ensure you have matplotlib installed on your system. We make use of these graphs in chapter 5 and 6. Feel free to play around with different configurations of these graphs, by tuning the values of n and k.
-
-Finally, to run the test cases please run: forge test --via-ir -vv 
-To ensure this runs, please ensure you have forge installed on your system, with version number: forge 0.2.0.
-The output of the forge should be something like:
-Ran 7 tests for test/UnitTest1.sol:ComputationMarketTest
-[PASS] testHandleVerifierTimeout() (gas: 2006222)
-[PASS] testMajorityAgreement() (gas: 4837382)
-[PASS] testNoMajorityScenario() (gas: 2166810)
-[PASS] testProviderFailureWithNoMajority() (gas: 2167119)
-[PASS] testProviderTimeout() (gas: 2280338)
-[PASS] testVerifierMajorityFailure() (gas: 2336753)
-[PASS] testWithdrawFunds() (gas: 591962)
-Suite result: ok. 7 passed; 0 failed; 0 skipped; finished in 12.48ms (13.38ms CPU time)
-
-Ran 7 tests for test/UnitTest2.sol:ComputationMarketTest
-[PASS] testCancelRequestAfterSelection() (gas: 586454)
-[PASS] testErrorsAndRequiredStatements() (gas: 564098)
-[PASS] testMultipleRoundsWithVerifierSampling() (gas: 5593943)
-[PASS] testMultipleRoundsWithVerifierSamplingWithoutTimeWarps() (gas: 5592549)
-[PASS] testProviderTimeoutScenario() (gas: 2526960)
-[PASS] testVerifierBalancesAfterRounds() (gas: 5626760)
-[PASS] testVerifierTimeoutWithPartialReveals() (gas: 2285115)
-Suite result: ok. 7 passed; 0 failed; 0 skipped; finished in 17.17ms (10.50ms CPU time)
-
-Ran 8 tests for test/sanity_tests.sol:ComputationMarketTest
-[PASS] testApplyForVerificationForRequest() (gas: 1001456)
-[PASS] testCancelRequest() (gas: 596466)
-[PASS] testCompleteRequest() (gas: 908864)
-[PASS] testCreateRequest() (gas: 562620)
-[PASS] testRevealCommitment() (gas: 1912150)
-[PASS] testRevealProviderKeyAndHash() (gas: 1685223)
-[PASS] testSelectRequest() (gas: 782826)
-[PASS] testSubmitCommitment() (gas: 1565918)
-Suite result: ok. 8 passed; 0 failed; 0 skipped; finished in 17.18ms (8.44ms CPU time)
-
-Ran 7 tests for test/UnitTest3.sol:ComputationMarketTest
-[PASS] testCancelRequestAfterSelection() (gas: 779308)
-[PASS] testErrorsAndRequiredStatements() (gas: 563720)
-[PASS] testNewProviderHolderBalanceAfterRounds() (gas: 7812648)
-[PASS] testSomeVerifiersNotTriggered() (gas: 2157095)
-[PASS] testVerifierBalancesAfterRounds() (gas: 7782715)
-[PASS] testVerifierTimeoutWithPartialReveals() (gas: 2961289)
-[PASS] testWhenProviderIsIncorrect() (gas: 5641037)
-Suite result: ok. 7 passed; 0 failed; 0 skipped; finished in 17.21ms (23.34ms CPU time)
-
-Ran 1 test for test/UnitTest4.sol:ComputationMarketTestMultipleRequests
-[PASS] testMultipleRequests() (gas: 58329313)
-Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 39.68ms (32.82ms CPU time)
-
-Ran 5 test suites in 157.62ms (103.71ms CPU time): 30 tests passed, 0 failed, 0 skipped (30 total tests)

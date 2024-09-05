@@ -2,13 +2,13 @@ In this project, we create a computational marketplace on the Ethereum blockchai
 
 The marketplace is deployed at address: 0xf1d4Ff17b93Ee22A899EBea292fBD69AA621eE0D
 
-The token (called COMP token) is deployed at address: 0x4bF7a4aba7122EB9cDE8F563a65Bd3B623DAECbF \\
-The NFT is deployed at address: 0xA84e318a193465b19Df80d21Ef5Efee315065104 \\
-The HandlerFunctionsCompMarket is deployed at address: 0xf8b425579A0F7963a689de91a3a4968Af54425cC \\
+The token (called COMP token) is deployed at address: 0x4bF7a4aba7122EB9cDE8F563a65Bd3B623DAECbF /n
+The NFT is deployed at address: 0xA84e318a193465b19Df80d21Ef5Efee315065104 /n
+The HandlerFunctionsCompMarket is deployed at address: 0xf8b425579A0F7963a689de91a3a4968Af54425cC /n
 
-To view the token on ArbScan: https://arbiscan.io/address/0x4bF7a4aba7122EB9cDE8F563a65Bd3B623DAECbF \\
-To view the NFT on ArbScan: https://arbiscan.io/address/0xA84e318a193465b19Df80d21Ef5Efee315065104 \\
-To view the Marketplace contract on Arbscan: https://arbiscan.io/address/0xf1d4Ff17b93Ee22A899EBea292fBD69AA621eE0D
+To view the token on ArbScan: https://arbiscan.io/address/0x4bF7a4aba7122EB9cDE8F563a65Bd3B623DAECbF \n
+To view the NFT on ArbScan: https://arbiscan.io/address/0xA84e318a193465b19Df80d21Ef5Efee315065104 \n
+To view the Marketplace contract on Arbscan: https://arbiscan.io/address/0xf1d4Ff17b93Ee22A899EBea292fBD69AA621eE0D \n
 
 
 Note that a single COMP token is equal to 10**18 COMP units, since the COMP token follows the ERC20 standard.

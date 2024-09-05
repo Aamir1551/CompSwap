@@ -16,7 +16,21 @@ Note that a single COMP token is equal to 10**18 COMP units, since the COMP toke
 You can run this project, by running the relevant python file: AllCorrectSimulator.ipynb
 In that file, we do a successful verification run of a request which we also deploy on the Arbiturm sepolia test net.
 
-We also have the files: ProviderIncorrectSimulator.ipynb which simulates what happens when a provider is incorrect, and we also have the file VerifierIncorrectSimulator.ipynb. These files live in the contracts folder, and each of them deploy the necessary contracts for the marketplace on the Arbitrum Sepolia test net, and then create a request for computation, and simulate an entire verification, with the neceessary functions being called. The ProviderIncorrectSimulator.ipynb simulates what happens when a provider is incorrect, and demonstrates the slashing behavior, and likewise the file VerifierIncorrectSimulator.ipynb demonstrates what happens when a verifier is incorrect, and the slashing that takes place. Additionally, to run these files you must also have web3, eth_abi, solcx installed on your system. 
+We also have the files: ProviderIncorrectSimulator.ipynb which simulates what happens when a provider is incorrect, and we also have the file VerifierIncorrectSimulator.ipynb. These files live in the contracts folder, and each of them deploy the necessary contracts for the marketplace on the Arbitrum Sepolia test net, and then create a request for computation, and simulate an entire verification, with the neceessary functions being called. The ProviderIncorrectSimulator.ipynb simulates what happens when a provider is incorrect, and demonstrates the slashing behavior, and likewise the file VerifierIncorrectSimulator.ipynb demonstrates what happens when a verifier is incorrect, and the slashing that takes place. Additionally, to run these files you must also have web3, eth_abi, solcx installed on your system.  In addition, to run these python files, you will need to provide a file called private_keys.json, with a json object with keys (that are Arbitrum Sepolia addresses): consumer, provider, verifier1, verifier2, verifier3, verifier4 and verifier 5, and provide private keys for each of these addresses as the values of this json object. An example would look like this:
+
+```
+{
+    "consumer": "2ae27eeaa8095f56cd7c02adddd144bdc02d67c3d2a890b7f2ee0097cd520934",
+    "provider": "efa61ee281826a391cb7113f644d97482903721d7bd3560c771e1b91676a435e",
+    "verifier1": "1543215e1c43b0c70b7b69047f1a933b83b1e47e040e7f137bf379405b1ab136",
+    "verifier2": "5f3a423cad7d8cf4d5c26856a0aa1d63de638db5da411eec99c85354737e41b3",
+    "verifier3": "b239240ea6dea66c2473af62f696737e7473ab0194b5a47706d2e5b0fda54a89",
+    "verifier4": "a697109fc85aa8c18b8e1ce76e0728d64b4803fe97155afd8f7b9f946260ebdd",
+    "verifier5": "3d0d6ce1796a6e228b4ef274eeb3d44cbf828db5db35ac0af3dc7be11f8a54c6"
+}
+```
+
+You will also need to provide a private key for the deployerPrivateKey variable in the 4th Jupyter cell. Please ensure that the private key of the address you specified, has enough ethereum on the Arbitrum Sepolia chain to deploy the different contracts. Also ensure that each of the addresses of the private keys you gave in the private_keys.json have enough Ethereum on the Arbitrum Seplia chain to conduct the different transactions on the chain.
 
 To generate valid commitments, you may use the file: commitment_generator.ipynb, and in the variable list: verifier_addresses pass in the 5 verifier addresses you are using. To run this file, you will need to use Python 3, and will need to have web3 package installed on your system. This file will generate a nonce and the relevant commitments you will need to pass. For a successful run, all verifiers must pass in the "Provider Answer Hash" as the <answer_hash>. To use your own private key and initialisation vector, please set the variables provider_key and initialisation_vector to the required values. Likewise for the provider_answer_hash please set this to your own hashed answer for that round.
 

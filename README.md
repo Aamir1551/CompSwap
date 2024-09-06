@@ -121,11 +121,11 @@ In the below steps now, we will perform a successful request, that goes through 
 
 9. **Transfer Tokens to Other Accounts**
    - In `COMPToken`, use the `transfer` function to send tokens from the consumer account to the provider and verifiers:
-     - For provider:
+     - For provider, pass in:
        ```
        0xProviderAddress, 1000000000000000000000
        ```
-     - For verifiers (repeat for each verifier address):
+     - For verifiers (repeat for each verifier address), pass in:
        ```
        0xVerifierAddress, 500000000000000000000
        ```
@@ -201,7 +201,7 @@ In the below steps now, we will perform a successful request, that goes through 
       ```
 
 18. **Calculate Majority and Reward**
-    - Verifiers should calculate the majority and reward after the round by calling `calculateMajorityAndReward`:
+    - Verifiers should calculate the majority and recieve their reward after the round by calling `calculateMajorityAndReward`:
       ```
       <requestId>, <round_number>
       ```

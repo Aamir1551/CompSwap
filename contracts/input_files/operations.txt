@@ -1,0 +1,7 @@
+input_var_1 ./input_files/input1.txt
+input_var_2 ./input_files/input2.txt
+identity ./input_files/identity.txt
+operation_1 add input_var_1 input_var_2
+operation_2 subtract input_var_1 operation_1
+operation_3 mul operation_2 input_var_1
+operation_4 matmul operation_3 identity

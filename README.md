@@ -23,7 +23,7 @@ To run the python files you will need to create a virtual environment by:
 
 ```
 python3 -m venv myenv
-source venv/bin/activate
+source myenv/bin/activate
 ```
 Which will create a virtual environment called myenv (on a linux machine).
 After this, please run:

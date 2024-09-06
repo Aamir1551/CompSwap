@@ -30,7 +30,7 @@ After this, please run:
 ```
 pip install -r requirements.txt
 ```
-Which will install the necessary packages you require. Afte this, run the python files in this virtual environment.
+Which will install the necessary packages you require. After this, run the python files in this virtual environment.
 Note that we are using python version 3.12.4
 
 

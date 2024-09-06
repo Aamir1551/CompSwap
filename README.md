@@ -12,7 +12,7 @@ To view the Marketplace contract on Arbscan: https://arbiscan.io/address/0xf1d4F
 To view our token on Uniswap, see: https://app.uniswap.org/explore/tokens/arbitrum/0x4bf7a4aba7122eb9cde8f563a65bd3b623daecbf  
 To buy this token, you will need Eth on Arbitrum Sepolia to swap for the CompToken
 
-You can interact with these contracts using remix. First compile the contract that you'd like to deploy in remix (copy and paste the appropriate file where the contract is defined in remix), and then click on the "Deploy and run transactions" tab, and write the address that you'd like to interact with in the "Load contract from Address" textbox. After this, click the blue "At Address" box, and remix will now offer you the functions that you can use to interact with this contract.
+You can interact with these contracts using remix. First compile the contract that you'd like to deploy in remix (copy and paste the appropriate file where the contract is defined into remix), and then click on the "Deploy and run transactions" tab, and write the address that you'd like to interact with in the "Load contract from Address" textbox. After this, click the blue "At Address" box, and remix will now offer you the functions that you can use to interact with this contract.
 
 Note that a single COMP token is equal to 10**18 COMP units, since the COMP token follows the ERC20 standard.
 

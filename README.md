@@ -12,9 +12,9 @@ To view the Marketplace contract on Arbscan: https://arbiscan.io/address/0xf1d4F
 To view our token on Uniswap, see: https://app.uniswap.org/explore/tokens/arbitrum/0x4bf7a4aba7122eb9cde8f563a65bd3b623daecbf  
 To buy this token, you will need Eth on Arbitrum Sepolia to swap for the CompToken
 
-You can interact with these contracts using remix: https://remix.ethereum.org/. First compile the contract that you'd like to deploy in remix (copy and paste the appropriate file where the contract is defined into remix), and then click on the "Deploy and run transactions" tab, and write the address that you'd like to interact with in the "Load contract from Address" textbox. After this, click the blue "At Address" box, and remix will now offer you the functions that you can use to interact with this contract.
+You can interact with these contracts using remix: https://remix.ethereum.org/. First compile the contract that you'd like to deploy in remix (upload the appropriate file where the contract is defined into remix), and then click on the "Deploy and run transactions" tab, and write the address (from above) that you'd like to interact with in the "Load contract from Address" textbox. After this, click the blue "At Address" box, and remix will now offer you the functions that you can use to interact with this contract.
 
-All contract code lives in the folder: `contracts`. All relevent python files we discuss below also lives in the `contracts` folder.
+All contract code and python files we discuss below are in the `contracts` folder.
 
 Note that a single COMP token is equal to 10**18 COMP units, since the COMP token follows the ERC20 standard.
 
@@ -29,14 +29,14 @@ After this, please run:
 ```
 pip install -r requirements.txt
 ```
-Which will install the necessary packages you require. After this, run the python files in this virtual environment.
+which will install all the necessary packages you require to run the python files we describe below using this environment. After this, run the python files using this virtual environment.
 Note that we are using python version 3.12.4
 
 You can run this project, by running the relevant python file: `contracts/AllCorrectSimulator.ipynb` (or run `contracts/Protocol1AllCorrectSimulator.ipynb` to do a run using protocol 1 without any example hashes).
 In that file, we do a successful verification run of a request which we also deploy on the Arbiturm sepolia test net.
 
 
-The files `contracts/ProviderIncorrectSimulator.ipynb` and `contracts/VerifierIncorrectSimulator.ipynb` deploy the necessary contracts for the marketplace on the Arbitrum Sepolia test net, and then create a request for computation, and simulate an entire verification, with the neceessary functions being called. The ProviderIncorrectSimulator.ipynb simulates what happens when a provider is incorrect, and demonstrates the slashing behavior, and likewise the file VerifierIncorrectSimulator.ipynb demonstrates what happens when a verifier is incorrect, and the slashing that takes place. Additionally, to run these files you must also have web3, eth_abi, solcx installed on your system.  In addition, to run these python files, you will need to provide a file called private_keys.json, with a json object with keys (that are Arbitrum Sepolia addresses): consumer, provider, verifier1, verifier2, verifier3, verifier4 and verifier 5, and provide private keys for each of these addresses as the values of this json object. An example would look like this (these accounts will only have Arbitrum Seplia test net tokens on them, but to collect more please use a test net faucet as these may not have sufficient tokens anymore, or use your own addresses):
+The files `contracts/ProviderIncorrectSimulator.ipynb` and `contracts/VerifierIncorrectSimulator.ipynb` deploy the necessary contracts for the marketplace on the Arbitrum Sepolia test net, and then create a request for computation, and simulate an entire verification, with the neceessary functions being called. The ProviderIncorrectSimulator.ipynb simulates what happens when a provider is incorrect, and demonstrates the slashing behavior, and likewise the file VerifierIncorrectSimulator.ipynb demonstrates what happens when a verifier is incorrect, and the slashing that takes place. In addition, to run these python files, you will need to provide a file called private_keys.json, with a json object with keys: consumer, provider, verifier1, verifier2, verifier3, verifier4 and verifier 5, and provide private keys for each of these addresses as the values of this json object (note that addresses must be on the Arbitrum sepolia test net). An example would look like this (these accounts will only have Arbitrum Seplia test net tokens on them, but to collect more please use a test net faucet as these may not have sufficient tokens anymore, or use your own addresses):
 
 ```
 {
@@ -54,9 +54,9 @@ You will also need to provide a private key for the deployerPrivateKey variable 
 
 To generate valid commitments, you may use the file: `contracts/commitment_generator.ipynb`, and in the variable list: verifier_addresses pass in the 5 verifier addresses you are using. To run this file, you will need to use Python 3, and will need to have web3 package installed on your system. This file will generate a nonce and the relevant commitments you will need to pass. For a successful run, all verifiers must pass in the same "Provider Answer Hash" as the <answer_hash>. To use your own private key and initialisation vector, please set the variables provider_key and initialisation_vector to the required values. Likewise for the provider_answer_hash please set this to your own hashed answer for that round.
 
-The file `contracts/paymentAnalysis.ipynb` exists to show the expected returns participants in the market could earn depending upon market conditions. To run this file, please ensure you have matplotlib installed on your system. We make use of these graphs in chapter 5 and 6. Feel free to play around with different configurations of these graphs, by tuning the values of n and k.
+The file `contracts/paymentAnalysis.ipynb` exists to show the expected returns participants in the market could earn depending upon market conditions. We make use of these graphs in chapter 5 and 6. Feel free to play around with different configurations of these graphs, by tuning the values of n and k.
 
-Our next python file is `contracts/protocol1.ipynb`. This file demonstrates how providers create hashes of the "roots of a round" that we described in section 4. To run this file, please ensure that you have hashlib, Crypto and secrets and numpy python packages installed on your system.
+Our next python file is `contracts/protocol1.ipynb`. This file demonstrates how providers create hashes of the "roots of a round" that we described in section 4.
 
 Our final python file is the `contracts/Protocol1AllCorrectSimulator.ipynb`. In this file, we run a successful run of our entire marketplace, and in this case, we also integrate the features of Protocol 1 and do not use example hashes like we did in the previous python files, and we do computation over the operations file: `contracts/inputs/operations.txt`, with the rest of the files in the `contracts/inputs` directory being the input files. For this example, our provider also produces the round files in the directory `contracts/outputs`: round1.txt, round2.txt, round3.txt, round4.txt and round5.txt
 

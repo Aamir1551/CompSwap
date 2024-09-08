@@ -12,13 +12,13 @@ To view the Marketplace contract on Arbscan: https://arbiscan.io/address/0xf1d4F
 To view our token on Uniswap, see: https://app.uniswap.org/explore/tokens/arbitrum/0x4bf7a4aba7122eb9cde8f563a65bd3b623daecbf  
 To buy this token, you will need Eth on Arbitrum Sepolia to swap for the CompToken
 
-All contract code lives in the folder: `contracts`. All relevent python files we discuss below also lives in the `contracts` folder.
-
 You can interact with these contracts using remix. First compile the contract that you'd like to deploy in remix (copy and paste the appropriate file where the contract is defined into remix), and then click on the "Deploy and run transactions" tab, and write the address that you'd like to interact with in the "Load contract from Address" textbox. After this, click the blue "At Address" box, and remix will now offer you the functions that you can use to interact with this contract.
+
+All contract code lives in the folder: `contracts`. All relevent python files we discuss below also lives in the `contracts` folder.
 
 Note that a single COMP token is equal to 10**18 COMP units, since the COMP token follows the ERC20 standard.
 
-To run the python bot files you will need to create a virtual environment by: 
+To run the python files (all defined in the `contracts` folder) you will need to create a virtual environment by: 
 
 ```
 python3 -m venv myenv
@@ -32,7 +32,7 @@ pip install -r requirements.txt
 Which will install the necessary packages you require. After this, run the python files in this virtual environment.
 Note that we are using python version 3.12.4
 
-You can run this project, by running the relevant python file: `contracts/AllCorrectSimulator.ipynb` (or run `contracts/Protocol1AllCorrectSimulator.ipynb` to do a run using protocol1 without any example hashes).
+You can run this project, by running the relevant python file: `contracts/AllCorrectSimulator.ipynb` (or run `contracts/Protocol1AllCorrectSimulator.ipynb` to do a run using protocol 1 without any example hashes).
 In that file, we do a successful verification run of a request which we also deploy on the Arbiturm sepolia test net.
 
 

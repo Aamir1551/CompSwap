@@ -152,6 +152,8 @@ In the below steps now, we will perform a successful request, that goes through 
      ```
      You may use the following site: https://www.unixtimestamp.com/ to get the relevent timestamps you want. For sake of testing, pick timestamps that are really far away. Such as 1913122415 for computation deadline, and 1944658415 for verification. For example hash of input files, you could use: 0x52467c536c0083b7c5d02ce98e64b6a290e377272b57901250f1a3be45ff5b30
 
+     If in the case you would like to pass in the `verifierVoteCount`, you need to call the function `createRequestWithAllowedVerifiers` and the parameters for this function are the same for `createRequest` except we add an additional parameter in the end which is the `verifierVoteCount` function.
+
 11. **Select the Request**
     - Approve the market to transfer tokens on behalf of the provider. The amount you will need to approve the market of is: 500000000000000000000 COMP (500 COMP tokens)
     - In the `ComputationMarket` contract, the provider should call `selectRequest` with the `requestId`:

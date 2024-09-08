@@ -29,7 +29,7 @@ After this, please run:
 ```
 pip install -r requirements.txt
 ```
-which will install all the necessary packages you require to run the python files we describe below using this environment. After this, run the python files using this virtual environment.
+which will install all the necessary packages you require to run the python files we describe below.
 Note that we are using python version 3.12.4
 
 You can run this project, by running the relevant python file: `contracts/AllCorrectSimulator.ipynb` (or run `contracts/Protocol1AllCorrectSimulator.ipynb` to do a run using protocol 1 without any example hashes).
